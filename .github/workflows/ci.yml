@@ -17,4 +17,9 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm test
+      - run: npm run test:lua
+      - run: npm run test:runtime
+      - run: npm run test:input
+      - name: Test APK injection
+        shell: pwsh
+        run: ./tests/test-build.ps1

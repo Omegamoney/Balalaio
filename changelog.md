@@ -14,6 +14,8 @@ All notable changes to Balalaio are documented here.
   button follows its saved, edge-clamped position.
 - Added a regression harness using Balatro's real Controller, UIBox, UIElement,
   Node, and Moveable input path from a locally extracted user-owned APK.
+- Run the archive-injection test directly in PowerShell Core on GitHub Actions
+  while retaining the Windows PowerShell-compatible local test command.
 
 ## 0.1.0 - 2026-07-27
 
