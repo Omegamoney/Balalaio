@@ -6,7 +6,7 @@ import { lua, lauxlib, lualib, to_luastring, to_jsstring } from "fengari";
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(currentDirectory, "..");
 const moduleSource = fs.readFileSync(
-  path.join(repositoryRoot, "src", "balalaio.lua"),
+  path.join(repositoryRoot, "Balalaio", "balalaio.lua"),
   "utf8",
 );
 if (/focus_args\s*=\s*\{\s*type\s*=\s*["']none["']\s*\}/u.test(moduleSource)) {
@@ -190,7 +190,34 @@ Game = {
   "@runtime-prelude.lua",
 );
 
-runLua(moduleSource, "@src/balalaio.lua");
+runLua(moduleSource, "@Balalaio/balalaio.lua");
+runLua(
+  `
+first_balalaio_instance = Balalaio
+first_balalaio_game_update = Game.update
+`,
+  "@capture-reload-state.lua",
+);
+runLua(moduleSource, "@Balalaio/balalaio-reload.lua");
+runLua(
+  `
+assert(Balalaio == first_balalaio_instance)
+assert(Game.update == first_balalaio_game_update)
+
+local replacement_update_calls = 0
+Balalaio = {
+    update = function()
+        replacement_update_calls = replacement_update_calls + 1
+    end,
+}
+local replacement_game = {}
+Game.update(replacement_game, 0.016)
+assert(replacement_game.original_updates == 1)
+assert(replacement_update_calls == 1)
+Balalaio = first_balalaio_instance
+`,
+  "@reload-tests.lua",
+);
 
 runLua(
   `

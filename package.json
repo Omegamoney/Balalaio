@@ -1,14 +1,16 @@
 {
   "name": "balalaio",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "private": true,
-  "description": "Source-only Balatro mobile cheat panel and APK build scripts",
+  "description": "Offline in-game run and Joker controls for Balatro",
   "scripts": {
     "test:lua": "node tests/check-lua.mjs",
+    "test:steam-package": "node tests/check-steam-package.mjs",
     "test:runtime": "node tests/check-runtime.mjs",
     "test:input": "node tests/check-input-path.mjs",
+    "test:installer": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/test-install.ps1",
     "test:build": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/test-build.ps1",
-    "test": "npm run test:lua && npm run test:runtime && npm run test:input && npm run test:build"
+    "test": "node tests/check-lua.mjs && node tests/check-steam-package.mjs && node tests/check-runtime.mjs && node tests/check-input-path.mjs && powershell -NoProfile -ExecutionPolicy Bypass -File tests/test-install.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File tests/test-build.ps1"
   },
   "devDependencies": {
     "fengari": "^0.1.4",

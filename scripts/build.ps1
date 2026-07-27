@@ -343,8 +343,22 @@ function Get-BundledWindowsZipAlign {
 
 $repoRoot = (Resolve-Path -LiteralPath (Join-Path $PSScriptRoot "..")).Path
 $sourceModule = Resolve-ExistingFile `
-    -Path (Join-Path $repoRoot "src\balalaio.lua") `
+    -Path (Join-Path $repoRoot "Balalaio\balalaio.lua") `
     -Label "Balalaio module"
+$modMetadata = Resolve-ExistingFile `
+    -Path (Join-Path $repoRoot "Balalaio\Balalaio.json") `
+    -Label "Balalaio metadata"
+try {
+    $balalaioVersion = (
+        Get-Content -Raw -LiteralPath $modMetadata | ConvertFrom-Json
+    ).version
+}
+catch {
+    throw "Could not read the Balalaio version from '$modMetadata'."
+}
+if ([string]::IsNullOrWhiteSpace($balalaioVersion)) {
+    throw "Balalaio metadata does not define a version."
+}
 $inputPath = Resolve-ExistingFile -Path $InputApk -Label "Input APK"
 $outputPath = Resolve-OutputFile -Path $OutputApk
 
@@ -507,7 +521,7 @@ try {
             Write-ZipText `
                 -Archive $archive `
                 -Name "assets/balalaio.version" `
-                -Text ("version=0.1.1" + $newline)
+                -Text ("version=$balalaioVersion" + $newline)
         }
         finally {
             $archive.Dispose()

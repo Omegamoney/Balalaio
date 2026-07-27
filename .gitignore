@@ -18,9 +18,13 @@ build/
 dist/
 original/
 extracted/
+Balatro.exe
+version.dll
+*.love
 
 # Node development dependencies
 node_modules/
+.pnpm-store/
 
 # Editor and operating-system files
 .idea/

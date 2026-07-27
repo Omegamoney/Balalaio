@@ -18,8 +18,12 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run test:lua
+      - run: npm run test:steam-package
       - run: npm run test:runtime
       - run: npm run test:input
+      - name: Test Steam installer
+        shell: pwsh
+        run: ./tests/test-install.ps1
       - name: Test APK injection
         shell: pwsh
         run: ./tests/test-build.ps1
