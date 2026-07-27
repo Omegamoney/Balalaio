@@ -1,0 +1,17 @@
+{
+  "name": "balalaio",
+  "version": "0.1.1",
+  "private": true,
+  "description": "Source-only Balatro mobile cheat panel and APK build scripts",
+  "scripts": {
+    "test:lua": "node tests/check-lua.mjs",
+    "test:runtime": "node tests/check-runtime.mjs",
+    "test:input": "node tests/check-input-path.mjs",
+    "test:build": "powershell -NoProfile -ExecutionPolicy Bypass -File tests/test-build.ps1",
+    "test": "npm run test:lua && npm run test:runtime && npm run test:input && npm run test:build"
+  },
+  "devDependencies": {
+    "fengari": "^0.1.4",
+    "luaparse": "^0.3.1"
+  }
+}

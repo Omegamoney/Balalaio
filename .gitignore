@@ -1,0 +1,35 @@
+# User-supplied and generated Android packages
+*.apk
+*.apks
+*.aab
+*.idsig
+
+# Signing material
+*.jks
+*.keystore
+*.p12
+*.pem
+*.key
+
+# Extracted proprietary game files and local build state
+.work/
+.tools/
+build/
+dist/
+original/
+extracted/
+
+# Node development dependencies
+node_modules/
+
+# Editor and operating-system files
+.idea/
+.vscode/
+*.swp
+Thumbs.db
+.DS_Store
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
