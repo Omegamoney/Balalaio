@@ -2,6 +2,39 @@
 
 All notable changes to Balalaio are documented here.
 
+## 0.2.0 - 2026-07-27
+
+### Added
+
+- Added an install-ready Steamodded JSON package for Balatro's current Steam
+  revision.
+- Added a Windows installer that detects default and alternate Steam libraries,
+  supports explicit or interactive folder selection, installs the current
+  Lovely and Steamodded releases, preserves replaced files outside `Mods`, and
+  rolls back earlier steps if a later installation step fails.
+- Added Steam package, dependency metadata, installer fixture, and module reload
+  regression tests, including staged dependency archives and rollback coverage.
+- Added four in-game screenshots covering General controls, Joker management,
+  editions, stickers, and per-instance values.
+
+### Changed
+
+- Reworked the README around the Steam one-click install, manual layout,
+  compatibility boundary, usage, troubleshooting, and uninstall flow.
+- Made the `Balalaio` folder the source of truth and directly copyable into the
+  Steamodded `Mods` directory.
+- Centralized the displayed and APK-injected version around the package metadata.
+
+### Fixed
+
+- Made the `Game.update` integration resolve the active global module so a
+  Steamodded development reload cannot leave the launcher tied to stale state.
+- Made loading the same Balalaio version idempotent.
+- Pinned Steamodded compatibility to Balatro's full loader-visible
+  `1.0.1o-FULL` version string.
+- Updated the real input-path harness for the current Steam controller event
+  manager and verified tap/drag behavior against the supplied Steam build.
+
 ## 0.1.1 - 2026-07-27
 
 ### Fixed

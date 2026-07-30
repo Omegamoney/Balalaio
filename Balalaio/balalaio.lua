@@ -1,8 +1,16 @@
 -- Balalaio
--- Offline cheat controls for a user-supplied Balatro mobile build.
+-- Offline cheat controls for Balatro.
+
+local existing = rawget(_G, "Balalaio")
+if existing and existing.VERSION == "0.2.0" then
+    return existing
+end
+if existing and type(existing.remove_float_button) == "function" then
+    pcall(existing.remove_float_button)
+end
 
 local Balalaio = {
-    VERSION = "0.1.1",
+    VERSION = "0.2.0",
     ui = {
         status = "",
     },
@@ -1283,7 +1291,7 @@ local function create_float_definition()
                 },
                 nodes = {
                     text_node(
-                        "BALALAIO 0.1.1",
+                        "BALALAIO " .. Balalaio.VERSION,
                         0.235,
                         G.C.ORANGE,
                         {shadow = true}
@@ -1341,7 +1349,7 @@ function Balalaio.create_float_button()
     local button = box:get_UIE_by_ID("balalaio_float_button")
     if button then
         -- The launcher belongs to live gameplay even if it was recreated on the
-        -- frame where Android changed the pause/lifecycle state.
+        -- frame where the platform changed the pause/lifecycle state.
         box.created_on_pause = nil
         box.UIRoot.created_on_pause = nil
         button.created_on_pause = nil
@@ -1551,7 +1559,10 @@ if Game and Game.update and not Game._balalaio_update_wrapped then
     local original_game_update = Game.update
     Game.update = function(self, dt)
         original_game_update(self, dt)
-        Balalaio.update()
+        local active = rawget(_G, "Balalaio")
+        if active and type(active.update) == "function" then
+            active.update()
+        end
     end
 end
 

@@ -27,13 +27,13 @@ const assetDirectory = candidateAssetDirectories.find((candidate) =>
 
 if (!assetDirectory) {
   console.log(
-    "Real Balatro input-path test skipped: set BALATRO_ASSETS_DIR to an extracted, user-owned APK assets directory.",
+    "Real Balatro input-path test skipped: set BALATRO_ASSETS_DIR to extracted, user-owned Balatro assets.",
   );
   process.exit(0);
 }
 
 const moduleSource = fs.readFileSync(
-  path.join(repositoryRoot, "src", "balalaio.lua"),
+  path.join(repositoryRoot, "Balalaio", "balalaio.lua"),
   "utf8",
 );
 const state = lauxlib.luaL_newstate();
@@ -106,6 +106,7 @@ function add_to_drawhash(node)
 end
 function play_sound() end
 function create_drag_target_from_card() end
+function Event(config) return config end
 
 local transparent = {0, 0, 0, 0}
 local white = {1, 1, 1, 1}
@@ -194,6 +195,11 @@ G = {
     TILE_H = 10,
     DRAW_HASH = {},
     DRAW_HASH_BUFF = 2,
+    E_MANAGER = {
+        add_event = function(_, event)
+            if event and event.func then event.func() end
+        end,
+    },
     MIN_CLICK_DIST = 0.5,
     MIN_HOVER_TIME = 0.1,
     CURSOR = {
@@ -244,7 +250,7 @@ runEngineFile(path.join("engine", "node.lua"));
 runEngineFile(path.join("engine", "moveable.lua"));
 runEngineFile(path.join("engine", "ui.lua"));
 runEngineFile(path.join("engine", "controller.lua"));
-runLua(moduleSource, "@src/balalaio.lua");
+runLua(moduleSource, "@Balalaio/balalaio.lua");
 
 runLua(
   `

@@ -6,7 +6,11 @@ import luaparse from "luaparse";
 
 const currentDirectory = path.dirname(fileURLToPath(import.meta.url));
 const repositoryRoot = path.resolve(currentDirectory, "..");
-const modulePath = path.join(repositoryRoot, "src", "balalaio.lua");
+const modulePath = path.join(
+  repositoryRoot,
+  "Balalaio",
+  "balalaio.lua",
+);
 const source = fs.readFileSync(modulePath, "utf8");
 
 const ast = luaparse.parse(source, {

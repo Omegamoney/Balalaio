@@ -1,115 +1,198 @@
 # Balalaio
 
-Balalaio is an offline, in-game cheat panel for a user-supplied Android build of
-Balatro. It adds a movable button and a native-looking modal with General and
-Jokers tools.
+Balalaio is an offline, in-game control panel for Balatro. It gives you direct
+control over run resources and Jokers through a native-looking overlay—without
+editing `Balatro.exe` or distributing any game files.
 
-This repository contains only original Balalaio source code, build scripts, and
-tests. It does **not** contain Balatro, extracted game assets, signing keys, or
-APK files.
+The primary release now targets **Balatro on Steam for Windows** through
+[Lovely](https://github.com/ethangreen-dev/lovely-injector) and
+[Steamodded](https://github.com/Steamodded/smods). The install-ready mod is in
+[`Balalaio/`](Balalaio/).
 
-## Current compatibility
+> Balalaio is intended for offline, single-player experimentation. Back up any
+> run you care about before using cheats.
 
-The first pass targets a self-contained, unprotected mobile build with:
+## What it can do
 
-- Game version: `1.0.1o-FULL [M]`
-- Android wrapper version: `12.5.6`
-- Package ID: `com.playstack.balatro.android`
-- Android version: `1.8` (`versionCode` 47)
-- Native ABIs: `arm64-v8a`, `armeabi-v7a`
-- Expected `assets/main.lua` SHA-256:
-  `362cc16e08841d527dff3c1fa5a3feedb7107df408fe4e2e680e1b4906e10f4c`
-- Verified universal input APK SHA-256:
-  `2122333ae94e048b4c3fdfd7279aac52a388917a98e652fe6335e8f24bd5c9e0`
+- Change current and maximum hands or discards.
+- Change money, Joker capacity, and consumable capacity.
+- Add and remove Jokers through a rarity-filtered browser.
+- Change Joker editions: Base, Foil, Holographic, Polychrome, and Negative.
+- Toggle Eternal, Perishable, and Rental stickers.
+- Inspect and adjust numeric values on individual Joker instances.
+- Drag the compact `BALALAIO` launcher to a convenient screen position.
+- Save mutations through Balatro's normal run-save path.
 
-The build script stops on an unknown game script by default so it cannot silently
-produce a broken APK. It also rejects Play base-split APKs without native
-libraries and wrappers containing Pairip signature protection. Balalaio does
-not remove or bypass license or anti-tamper components.
+## In-game examples
 
-## Features
+| General run controls | Joker management |
+| --- | --- |
+| ![Balalaio General tab with controls for hands, discards, money, Jokers, and consumables](docs/screenshots/general-tab.jpeg) | ![Balalaio Jokers tab listing the Jokers in the current run](docs/screenshots/jokers-tab.jpeg) |
 
-- Movable, edge-clamped `BALALAIO` button rendered in Balatro's native popup
-  layer so it remains touchable above cards and the first-run tutorial.
-- General controls for current/max hands, current/max discards, occupied/max
-  Joker slots, money, and occupied/max consumable slots.
-- Joker browser with add, remove, edition, Eternal, Perishable, and Rental
-  controls.
-- Advanced per-instance numeric modifier editor with `-1` and `+1` controls.
-- Paginated layouts designed for a landscape phone screen.
+| Editing a Negative Blue Joker | Editing Yorick's instance values |
+| --- | --- |
+| ![Balalaio editor showing a Negative Blue Joker and its numeric values](docs/screenshots/editing-negative-blue-joker.jpeg) | ![Balalaio editor showing Yorick's edition, stickers, and numeric values](docs/screenshots/editing-yorick.jpeg) |
 
-## Build
+## One-click Windows installation
 
 Requirements:
 
-- Windows PowerShell 5.1 or PowerShell 7+
-- Java/JDK 8 or newer
-- A legally obtained, compatible APK placed outside Git
-- Internet access on the first build to download the pinned APK signing tool
+- Balatro installed through Steam on Windows.
+- An internet connection for the first installation.
+- Balatro completely closed while the installer runs.
 
-From the repository root:
+Download and extract this repository, then double-click:
+
+```text
+install.bat
+```
+
+The installer:
+
+1. Detects Balatro from Steam's registry entries, default folder, and additional
+   Steam libraries.
+2. Opens a folder picker if it cannot find the game automatically.
+3. Downloads the latest published Windows release of Lovely.
+4. Downloads the latest published Steamodded release.
+5. Installs Balalaio to `%APPDATA%\Balatro\Mods\Balalaio`.
+6. Moves any replaced loader or mod folders to
+   `%APPDATA%\Balatro\Balalaio Backups` first.
+
+It does **not** touch profiles or saves under `%APPDATA%\Balatro\1`.
+
+To run it from PowerShell instead:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1
+```
+
+Useful alternatives:
+
+```powershell
+# Always choose the folder containing Balatro.exe
+.\install.ps1 -ChooseGameFolder
+
+# Supply a non-default Steam library directly
+.\install.ps1 -GamePath "D:\SteamLibrary\steamapps\common\Balatro"
+
+# Install only Balalaio when Lovely and Steamodded are already managed separately
+.\install.ps1 -SkipDependencies
+
+# Use already-downloaded official release archives
+.\install.ps1 -LovelyArchivePath .\lovely-windows.zip `
+  -SteamoddedArchivePath .\steamodded.zip
+```
+
+If Windows denies access to the Steam game folder, right-click `install.bat` and
+choose **Run as administrator**.
+
+### First launch
+
+Launch Balatro normally through Steam. Lovely should open a second console
+window, and Steamodded should show Balalaio in its Mods menu. Start or continue
+a run; the movable `BALALAIO` launcher appears during active gameplay.
+
+Lovely is an open-source runtime injector, so security software can occasionally
+flag it heuristically. The installer never disables antivirus or adds
+exclusions. See Steamodded's
+[official Windows guide](https://github.com/Steamodded/smods/wiki/Installing-Steamodded-windows)
+if `version.dll` is quarantined.
+
+## Manual installation
+
+Use the standard layout documented by
+[Lovely](https://github.com/ethangreen-dev/lovely-injector#manual-installation)
+and Steamodded:
+
+```text
+<Steam library>\steamapps\common\Balatro\
+  Balatro.exe
+  version.dll
+
+%APPDATA%\Balatro\Mods\
+  smods\
+    lovely\
+    src\
+    version.lua
+    ...
+  Balalaio\
+    Balalaio.json
+    balalaio.lua
+```
+
+1. Put Lovely's Windows x64 `version.dll` beside `Balatro.exe`.
+2. Extract Steamodded so its loader files are directly inside `Mods\smods`.
+3. Copy this repository's complete [`Balalaio/`](Balalaio/) folder into
+   `%APPDATA%\Balatro\Mods`.
+
+Avoid copying the whole repository into `Mods`; only the install-ready
+`Balalaio` folder belongs there.
+
+## Compatibility
+
+- Platform: Balatro Steam for Windows.
+- Tested game version: `1.0.1o-FULL` (revision `1.0.1o`).
+- Mod loader: Steamodded `1.0.0` beta line or newer.
+- Runtime injector: Lovely `0.9.0` or newer.
+
+`Balalaio.json` deliberately pins the full tested Balatro version because the panel
+uses internal game APIs. If Balatro updates, Steamodded will refuse to load
+Balalaio instead of risking a broken save or startup crash until compatibility
+is verified.
+
+Steamodded currently supports the Steam release of Balatro on Windows; the
+Microsoft Store build is not supported.
+
+## Updating and uninstalling
+
+Run `install.bat` again to refresh Lovely, Steamodded, and Balalaio. Existing
+copies are backed up outside `Mods` so Steamodded cannot discover duplicate
+loaders.
+
+To remove only Balalaio, delete:
+
+```text
+%APPDATA%\Balatro\Mods\Balalaio
+```
+
+To remove the mod loader entirely, also delete `version.dll` beside
+`Balatro.exe` and the `smods` folder. Other Steamodded mods will stop working.
+
+## Development
+
+Requirements:
+
+- Node.js 22 or newer.
+- Windows PowerShell 5.1 or PowerShell 7+.
+
+Run the full local suite:
+
+```powershell
+npm ci
+npm test
+```
+
+The suite checks Lua 5.1 parsing, Steamodded metadata, reload safety, mocked run
+mutations, the real Balatro input path when user-owned extracted assets are
+available, a sandboxed installer fixture, and the legacy APK injection path.
+
+The source-only Android builder remains available for the previously verified
+mobile wrapper:
 
 ```powershell
 .\scripts\build.ps1 -InputApk .\Balatro-v1.8.apk
 ```
 
-The signed output is written to `dist\Balalaio.apk`. The script prints its
-SHA-256 after signing and verification. It also fails the build if the compiled
-manifest, package identity, display-name resources, icon resources, Android
-resources, native libraries, or DEX files differ from the input.
+It accepts only a compatible, legally obtained APK and writes
+`dist\Balalaio.apk`. It does not remove or bypass license, integrity, or
+anti-tamper systems. APKs, signing material, game assets, generated packages,
+and local extraction directories remain excluded from Git.
 
-To use a custom signing keystore:
+## Project boundaries
 
-```powershell
-.\scripts\build.ps1 `
-  -InputApk .\Balatro-v1.8.apk `
-  -Keystore C:\secure\balalaio.jks `
-  -KeystoreAlias balalaio
-```
+This repository contains original Balalaio source, installer/build scripts,
+tests, and user-provided screenshots. It does not contain Balatro, extracted
+game assets, Lovely or Steamodded binaries, signing keys, or APK files. Balatro
+and its assets belong to their respective rights holders.
 
-Never commit the source APK, generated APK, or signing key. All of those paths
-are ignored by this repository.
-
-## Installing the test build
-
-The package ID is intentionally unchanged, so Balalaio cannot coexist with an
-official Balatro installation. Android also refuses to update an app when the
-new APK is signed by a different certificate.
-
-For the first test install:
-
-1. Back up any local saves you care about.
-2. Uninstall the existing `com.playstack.balatro.android` package.
-3. Install `dist\Balalaio.apk`.
-
-For repeatable in-place updates, supply the same private keystore on every
-build. The default signer is suitable for local testing, but it is not a private
-release identity.
-
-The build verifies ZIP alignment and Android v1, v2, and v3 signatures before
-returning an APK. It does not remove or bypass license, Play Integrity, or
-anti-tamper components. An upstream Play-protected APK can therefore still show
-its own license or installer-source prompt after launch even when Android's
-package verification succeeds.
-
-## Development checks
-
-```powershell
-npm install
-npm test
-```
-
-The test suite parses the Lua source as Lua 5.1, exercises mutations in a mocked
-Balatro runtime, validates tap/drag behavior through the extracted game's real
-input classes when a user-owned APK has been decoded locally, and validates the
-unsigned ZIP injection path against a synthetic APK-shaped fixture.
-
-## Notes
-
-- The application ID (`com.playstack.balatro.android`), app name, package
-  version, and icon remain those of the supplied APK.
-- Android clean-install testing found and informed the `0.1.1` launcher
-  touch-layer fix. Automated checks still run without a connected device.
-- Cheats are intended for offline, single-player use.
-- Balatro and its assets are owned by their respective rights holders and are
-  not distributed here.
+Balalaio is released under the [MIT License](LICENSE).
