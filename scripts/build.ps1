@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter()]
-    [string]$InputApk = ".\Balatro-v1.8.apk",
+    [string]$InputApk = ".\local-input\BalatroLatest.apk",
 
     [Parameter()]
     [string]$OutputApk = ".\dist\Balalaio.apk",

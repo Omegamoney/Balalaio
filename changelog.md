@@ -2,6 +2,94 @@
 
 All notable changes to Balalaio are documented here.
 
+## 0.4.0 - 2026-07-31
+
+### Added
+
+- Replaced the Add Joker name list with a five-card native gallery. Catalog
+  cards keep Balatro's normal hover, touch, and controller detail popup, while
+  a separate Add button prevents accidental selection.
+- Added a Consumables tab for live Tarot, Planet, and Spectral card previews,
+  exact type-filtered additions, edition editing, and safe per-instance numeric
+  effect editing.
+- Added a Deck tab backed by the complete `G.playing_cards` collection, so
+  cards remain visible while they are in the draw pile, hand, discard, or
+  another live card area.
+- Added exact playing-card creation plus native rank, suit, enhancement,
+  edition, and seal editing, and playing-card removal with Steamodded context
+  notifications.
+- Added gallery and CRUD regression coverage for isolated previews,
+  consumable config aliases, playing-card IDs, deck capacity, and mod hooks.
+
+### Changed
+
+- Generalized the owned-Joker preview pipeline for live consumables, playing
+  cards, and catalog entries without moving or cloning live bookkeeping state.
+- Consumable and deck mutations now use Balatro's normal constructors, setters,
+  materialization, save path, and Steamodded calculation contexts.
+- Collection changes that return no mutation no longer trigger a redundant run
+  save.
+
+### Fixed
+
+- Explicitly tear down preview cards when their private CardArea closes;
+  Balatro's native CardArea teardown does not remove its contained Cards.
+- Suppress custom center `set_ability` hooks only while constructing a preview,
+  preventing gallery browsing from changing the live run while restoring the
+  hook immediately afterward.
+- Restore each center's exact `used_jokers` state after preview construction so
+  opening a catalog cannot remove cards from future gameplay pools.
+- Reassert display-only gallery behavior after native CardArea insertion, which
+  otherwise re-enables dragging for cards in title areas.
+- Exclude the shared `ability.consumeable` alias from numeric traversal so
+  editing one consumable cannot mutate the global center definition.
+- Detach and mirror edited config-origin values into a per-card consumable
+  config, keeping both native and Steamodded effect reads functional across
+  run saves without changing other copies of the card.
+- Protect new playing-card IDs against stale high-water counters and
+  synchronize deck capacity immediately after adding or removing a card.
+- Reject deck edits and removals for stale, destroyed, area-less, or actively
+  scoring playing cards.
+- Exclude Negative from playing-card edition choices because Balatro routes
+  that edition's capacity effect through Joker/consumable areas.
+
+## 0.3.0 - 2026-07-30
+
+### Added
+
+- Replaced the owned-Joker name list with a five-card native gallery that
+  renders the current cards, editions, stickers, debuffs, and other visual
+  state.
+- Added native hover, touch-hold, and controller detail popups to gallery
+  previews, with tooltip values delegated to the live Joker instance.
+- Added bounded press-and-hold repeat for numeric `-` and `+` controls using
+  Balatro's native 0.30-second delay and a 10-actions-per-second ceiling.
+- Added `update.bat` for Balalaio-only upgrades and a reproducible versioned
+  Windows updater archive builder.
+
+### Changed
+
+- Numeric Joker modifiers now derive their adjustment step from the card
+  center's default: integer defaults retain a step of `1`, while fractional
+  defaults such as `0.25`, `0.01`, and `1.5` use that exact step.
+- Hold-repeat mutations save once when the hold ends instead of serializing the
+  run on every repeated tick.
+- The Android builder now defaults to the ignored
+  `local-input\BalatroLatest.apk` path for repeatable local builds.
+
+### Fixed
+
+- Rounded repeated fractional edits to the relevant decimal precision so
+  values such as `0.1` do not accumulate floating-point display drift.
+- Resolved lowercase `x_mult` and custom-edition config paths when deriving
+  fractional steps.
+- Filtered untouched Steamodded framework numerics from the Joker editor so
+  each page stays focused on configured or changed values.
+- Let Steamodded own Negative slot accounting when cycling editions, avoiding
+  duplicate or missing Joker capacity.
+- Kept gallery previews isolated from live Joker areas and deck bookkeeping so
+  closing a preview cannot remove a Joker or alter Negative capacity.
+
 ## 0.2.0 - 2026-07-27
 
 ### Added

@@ -5,13 +5,13 @@
   "author": [
     "Omegamoney"
   ],
-  "description": "Offline, in-game run and Joker controls for Balatro.",
+  "description": "Offline, in-game run, Joker, consumable, and deck controls for Balatro.",
   "prefix": "balalaio",
   "main_file": "balalaio.lua",
   "priority": 0,
   "badge_colour": "F39C12",
   "badge_text_colour": "FFFFFF",
-  "version": "0.2.0",
+  "version": "0.4.0",
   "dependencies": [
     "Steamodded (>=1.0.0~)",
     "Lovely (>=0.9.0)",

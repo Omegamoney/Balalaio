@@ -1,8 +1,9 @@
 # Balalaio
 
 Balalaio is an offline, in-game control panel for Balatro. It gives you direct
-control over run resources and Jokers through a native-looking overlay—without
-editing `Balatro.exe` or distributing any game files.
+control over run resources, Jokers, consumables, and playing cards through a
+native-looking overlay—without editing `Balatro.exe` or distributing any game
+files.
 
 The primary release now targets **Balatro on Steam for Windows** through
 [Lovely](https://github.com/ethangreen-dev/lovely-injector) and
@@ -16,10 +17,22 @@ The primary release now targets **Balatro on Steam for Windows** through
 
 - Change current and maximum hands or discards.
 - Change money, Joker capacity, and consumable capacity.
-- Add and remove Jokers through a rarity-filtered browser.
+- Browse and add Jokers through a rarity-filtered, five-card native gallery.
+- Browse owned Jokers as their real in-game cards, including editions and
+  stickers; hover or briefly press a card for its live Balatro details popup.
 - Change Joker editions: Base, Foil, Holographic, Polychrome, and Negative.
 - Toggle Eternal, Perishable, and Rental stickers.
-- Inspect and adjust numeric values on individual Joker instances.
+- Inspect and adjust numeric values on individual Joker instances with
+  per-stat steps derived from each Joker's defaults.
+- Browse held Tarot, Planet, and Spectral cards as live, interactive cards;
+  add exact consumables by type and edit their edition or safe per-instance
+  numeric values. Consumables remain removable through Balatro's normal Sell
+  action.
+- Browse every playing card in the run, even while cards are split between the
+  deck, hand, discard, and play areas.
+- Add exact playing cards by suit, remove cards, and edit rank, suit,
+  enhancement, edition, and seal through Balatro's native card APIs.
+- Hold numeric `-` or `+` controls for a bounded 10-actions-per-second repeat.
 - Drag the compact `BALALAIO` launcher to a convenient screen position.
 - Save mutations through Balatro's normal run-save path.
 
@@ -145,9 +158,18 @@ Microsoft Store build is not supported.
 
 ## Updating and uninstalling
 
-Run `install.bat` again to refresh Lovely, Steamodded, and Balalaio. Existing
-copies are backed up outside `Mods` so Steamodded cannot discover duplicate
-loaders.
+For a Balalaio-only update, extract the Windows updater package, close Balatro,
+and double-click:
+
+```text
+update.bat
+```
+
+The updater leaves Lovely and Steamodded unchanged, backs up the currently
+installed Balalaio folder, and replaces it with the packaged version. Run
+`install.bat` instead when you also want to refresh Lovely and Steamodded.
+Existing copies are backed up outside `Mods` so Steamodded cannot discover
+duplicate loaders.
 
 To remove only Balalaio, delete:
 
@@ -172,21 +194,32 @@ npm ci
 npm test
 ```
 
-The suite checks Lua 5.1 parsing, Steamodded metadata, reload safety, mocked run
-mutations, the real Balatro input path when user-owned extracted assets are
-available, a sandboxed installer fixture, and the legacy APK injection path.
+Build the self-contained Windows updater archive:
+
+```powershell
+.\scripts\package-updater.ps1
+```
+
+The resulting versioned archive is written under `dist\`.
+
+The suite checks Lua 5.1 parsing, Steamodded metadata, reload safety, isolated
+native card previews, mocked Joker/consumable/deck mutations, the real Balatro
+input path when user-owned extracted assets are available, a sandboxed
+installer fixture, and the legacy APK injection path.
 
 The source-only Android builder remains available for the previously verified
 mobile wrapper:
 
 ```powershell
-.\scripts\build.ps1 -InputApk .\Balatro-v1.8.apk
+.\scripts\build.ps1
 ```
 
-It accepts only a compatible, legally obtained APK and writes
-`dist\Balalaio.apk`. It does not remove or bypass license, integrity, or
-anti-tamper systems. APKs, signing material, game assets, generated packages,
-and local extraction directories remain excluded from Git.
+By default, the builder reads the compatible, legally obtained APK from
+`local-input\BalatroLatest.apk` and writes `dist\Balalaio.apk`. Use
+`-InputApk` to supply a different path. It does not remove or bypass license,
+integrity, or anti-tamper systems. The complete `local-input` directory, APKs,
+signing material, game assets, generated packages, and local extraction
+directories remain excluded from Git.
 
 ## Project boundaries
 

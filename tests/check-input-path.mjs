@@ -185,7 +185,7 @@ G = {
         },
     },
     LANG = {font = font},
-    TIMERS = {REAL = 1, UPTIME = 1},
+    TIMERS = {REAL = 1, UPTIME = 1, TOTAL = 1},
     FRAMES = {MOVE = 1, DRAW = 1},
     ARGS = {},
     exp_times = {xy = 0, scale = 0, r = 0, max_vel = 1},
@@ -305,8 +305,13 @@ end
 local function release(controller, x, y, elapsed)
     G.TIMERS.UPTIME = G.TIMERS.UPTIME + elapsed
     G.TIMERS.REAL = G.TIMERS.REAL + elapsed
+    G.TIMERS.TOTAL = G.TIMERS.TOTAL + elapsed
     controller:L_cursor_release(x, y)
     controller:update(0.016)
+end
+
+local function advance_real(elapsed)
+    G.TIMERS.REAL = G.TIMERS.REAL + elapsed
 end
 
 local opened = 0
@@ -509,9 +514,208 @@ assert(
 
 G.OVERLAY_TUTORIAL = nil
 G.under_overlay = false
+
+local repeat_calls = 0
+local expected_repeat_owner = nil
+G.FUNCS.balalaio_test_hold_repeat = function(element)
+    assert(
+        element == expected_repeat_owner,
+        "hold repeat must normalize an inherited button_UIE to its owner"
+    )
+    repeat_calls = repeat_calls + 1
+end
+
+local repeat_box = UIBox({
+    definition = {
+        n = G.UIT.ROOT,
+        config = {
+            align = "cm",
+            minw = 2,
+            minh = 1,
+            colour = G.C.CLEAR,
+        },
+        nodes = {
+            {
+                n = G.UIT.C,
+                config = {
+                    id = "balalaio_test_hold_button",
+                    align = "cm",
+                    minw = 1.5,
+                    maxw = 1.5,
+                    minh = 0.7,
+                    padding = 0.03,
+                    colour = G.C.BLUE,
+                    hover = true,
+                    button = "balalaio_test_hold_repeat",
+                    hold_repeat = true,
+                },
+                nodes = {
+                    {
+                        n = G.UIT.T,
+                        config = {
+                            text = "+",
+                            scale = 0.35,
+                            colour = G.C.WHITE,
+                        },
+                    },
+                },
+            },
+        },
+    },
+    config = {
+        align = "cm",
+        major = G.ROOM_ATTACH,
+        bond = "Weak",
+    },
+})
+
+local repeat_owner =
+    repeat_box:get_UIE_by_ID("balalaio_test_hold_button")
+local repeat_proxy = nil
+for _, child in pairs(repeat_owner.children or {}) do
+    if child.config and child.config.button_UIE == repeat_owner then
+        repeat_proxy = child
+        break
+    end
+end
+assert(
+    repeat_proxy,
+    "the real UIBox constructor must assign button_UIE to button contents"
+)
+
+-- Balatro normally gives inherited button content no hover target of its own.
+-- Enable it here so the real reverse draw-hash hit test selects that child and
+-- exercises Balalaio's button_UIE normalization instead of the owner directly.
+repeat_proxy.states.hover.can = true
+expected_repeat_owner = repeat_owner
+
+local function prepare_repeat_hit_test()
+    G.DRAW_HASH = {}
+    add_to_drawhash(repeat_box)
+    add_ui_to_draw_hash(repeat_box.UIRoot)
+    local x = (repeat_proxy.T.x + repeat_proxy.T.w / 2 + G.ROOM.T.x)
+        * G.TILESCALE
+        * G.TILESIZE
+    local y = (repeat_proxy.T.y + repeat_proxy.T.h / 2 + G.ROOM.T.y)
+        * G.TILESCALE
+        * G.TILESIZE
+    set_test_mouse(x, y)
+    return x, y
+end
+
+local function begin_repeat_touch()
+    local controller = fresh_controller()
+    local x, y = prepare_repeat_hit_test()
+    repeat_owner.disable_button = false
+    press(controller, x, y)
+    assert(
+        controller.cursor_down.target == repeat_proxy,
+        "real touch hit-testing must select the inherited button_UIE child"
+    )
+    Balalaio.update_hold_repeat()
+    return controller, x, y
+end
+
+local short_start = repeat_calls
+local short_controller, short_x, short_y = begin_repeat_touch()
+release(short_controller, short_x, short_y, 0.05)
+Balalaio.update_hold_repeat()
+assert(
+    repeat_calls == short_start + 1,
+    "a normal short touch must fire exactly once through native release"
+)
+assert(
+    repeat_owner.disable_button == false,
+    "a short touch must preserve the button's disable_button value"
+)
+
+local repeat_start = repeat_calls
+local repeat_controller, repeat_x, repeat_y = begin_repeat_touch()
+advance_real(0.299)
+Balalaio.update_hold_repeat()
+assert(
+    repeat_calls == repeat_start,
+    "holding for less than 0.30 seconds must not repeat"
+)
+
+advance_real(0.002)
+Balalaio.update_hold_repeat()
+assert(
+    repeat_calls == repeat_start + 1,
+    "the first repeat must fire after the 0.30 second delay"
+)
+Balalaio.update_hold_repeat()
+assert(
+    repeat_calls == repeat_start + 1,
+    "hold repeat must fire at most once per update"
+)
+
+advance_real(0.099)
+Balalaio.update_hold_repeat()
+assert(
+    repeat_calls == repeat_start + 1,
+    "hold repeat must respect its 0.10 second cadence"
+)
+advance_real(0.002)
+Balalaio.update_hold_repeat()
+assert(
+    repeat_calls == repeat_start + 2,
+    "hold repeat must resume after the 0.10 second cadence"
+)
+
+set_test_mouse(
+    repeat_x + 3 * G.TILESIZE * G.TILESCALE,
+    repeat_y
+)
+repeat_controller:update(0.016)
+advance_real(0.5)
+Balalaio.update_hold_repeat()
+assert(
+    repeat_calls == repeat_start + 2,
+    "moving the pointer outside the held button must pause repeats"
+)
+
+set_test_mouse(repeat_x, repeat_y)
+repeat_controller:update(0.016)
+Balalaio.update_hold_repeat()
+local calls_after_reentry = repeat_calls
+assert(
+    calls_after_reentry <= repeat_start + 3,
+    "pointer re-entry must never produce a catch-up burst"
+)
+
+advance_real(5)
+Balalaio.update_hold_repeat()
+assert(
+    repeat_calls == calls_after_reentry + 1,
+    "a large time jump must coalesce overdue repeats into one fire"
+)
+Balalaio.update_hold_repeat()
+assert(
+    repeat_calls == calls_after_reentry + 1,
+    "a large time jump must still allow at most one fire per update"
+)
+assert(
+    repeat_owner.disable_button == true,
+    "a repeated hold must suppress the native release click"
+)
+
+local calls_before_repeat_release = repeat_calls
+release(repeat_controller, repeat_x, repeat_y, 0.01)
+Balalaio.update_hold_repeat()
+assert(
+    repeat_calls == calls_before_repeat_release,
+    "native release must not add an extra click after repetition"
+)
+assert(
+    repeat_owner.disable_button == false,
+    "release must restore the button's prior disable_button value"
+)
+
 G.SETTINGS.paused = true
 G.TIMERS.UPTIME = G.TIMERS.UPTIME + 0.2
 G.TIMERS.REAL = G.TIMERS.REAL + 0.2
+G.TIMERS.TOTAL = G.TIMERS.TOTAL + 0.2
 Balalaio.update()
 assert(
     Balalaio.float_box == nil,
@@ -519,7 +723,7 @@ assert(
 )
 
 print(
-    "Real Balatro input-path tests passed; popup tap and visible-transform drag work over the tutorial overlay."
+    "Real Balatro input-path tests passed; popup input and bounded hold repeat work through Balatro's Controller path."
 )
 `,
   "@input-path-tests.lua",
