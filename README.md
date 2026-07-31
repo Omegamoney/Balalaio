@@ -180,6 +180,140 @@ To remove only Balalaio, delete:
 To remove the mod loader entirely, also delete `version.dll` beside
 `Balatro.exe` and the `smods` folder. Other Steamodded mods will stop working.
 
+## Patching an Android APK
+
+Balalaio includes a source-only builder that injects the mod into a compatible
+Balatro Android APK, preserves the original application identity and native
+libraries, then aligns, signs, and verifies the resulting package. The builder
+does not download or distribute Balatro itself.
+
+### Requirements
+
+- Windows PowerShell 5.1 or PowerShell 7+.
+- Java available through the `java` command. Confirm with `java -version`.
+- A legally obtained, self-contained Balatro Android APK for the supported
+  `1.0.1o-FULL [M]` mobile wrapper.
+- An internet connection on the first build so the script can download the
+  checksum-pinned APK signer. Later builds reuse the copy under `.tools\`.
+
+The input must be a complete APK containing `assets/main.lua` and packaged
+native libraries. A Play Store `base.apk` split by itself is incomplete. The
+builder also rejects Pairip-protected or encrypted wrappers because Balalaio
+does not remove or bypass licensing, integrity, or anti-tamper systems.
+
+### 1. Prepare the input APK
+
+Open the repository root—the folder containing `scripts`, `Balalaio`, and
+`package.json`. Create `local-input` if it does not already exist, then place
+your APK at:
+
+```text
+Balalaio repository
+├─ Balalaio\
+├─ scripts\
+├─ local-input\
+│  └─ BalatroLatest.apk
+└─ README.md
+```
+
+`local-input\`, all APK files, signing material, extracted game files, and
+generated packages are excluded by `.gitignore`.
+
+### 2. Build the patched APK
+
+Open PowerShell in the repository root and run:
+
+```powershell
+java -version
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build.ps1
+```
+
+The default build reads `local-input\BalatroLatest.apk` and writes:
+
+```text
+dist\Balalaio.apk
+```
+
+During the build, the script:
+
+1. Verifies the package ID, wrapper layout, game script hash, and native
+   libraries.
+2. Adds `assets/balalaio.lua` and a version marker.
+3. Adds Balalaio's startup `require` to `assets/main.lua` once.
+4. Preserves the manifest, package name, app name, icons, resources, DEX, and
+   native-library identity.
+5. Downloads and checksum-verifies `uber-apk-signer` when needed.
+6. Zip-aligns, signs, and verifies the APK with v1, v2, and v3 signatures.
+
+A successful build ends with the output path, byte size, SHA-256 digest,
+detected game version, native-library count, and signature-verification result.
+
+### 3. Use custom input and output paths
+
+You do not need to rename the source APK. Supply explicit paths instead:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build.ps1 `
+  -InputApk "D:\Backups\BalatroLatest.apk" `
+  -OutputApk ".\dist\Balalaio-v0.4.0.apk"
+```
+
+If a newer game build has been reviewed and confirmed compatible, developers
+can pass `-AllowUnknownVersion`. Do not use `-AllowUnsupportedWrapper` to work
+around license or integrity protection; obtain a compatible self-contained APK
+instead.
+
+### 4. Choose a signing strategy
+
+Without signing options, the builder uses the signer's embedded Android debug
+certificate. APK updates require the same package ID **and** signing
+certificate, so an APK signed this way cannot update an official installation
+or a build signed with another key. Back up any saves you care about before
+uninstalling an existing app, because Android normally removes its app data.
+
+For repeatable personal builds, provide your own keystore and keep it safe:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\build.ps1 `
+  -Keystore "D:\Keys\balalaio-release.jks" `
+  -KeystoreAlias "balalaio"
+```
+
+The signer may request the keystore credentials. The optional
+`-KeystorePassword` and `-KeyPassword` arguments are also supported, but be
+aware that command-line passwords can remain in shell history. Losing the
+keystore prevents future APKs from updating installations signed with it.
+
+### 5. Install and test
+
+Transfer `dist\Balalaio.apk` to the Android device, allow installation from the
+chosen file-manager source, and open the APK. With Android Debug Bridge, the
+equivalent update command is:
+
+```powershell
+adb install -r .\dist\Balalaio.apk
+```
+
+If Android reports a signature conflict, the installed copy was signed with a
+different certificate. Back up its data, uninstall it, then install the new
+APK. After launch, start or continue a run and confirm that the movable
+`BALALAIO 0.4.0` button appears.
+
+### Troubleshooting
+
+| Message or symptom | What to check |
+| --- | --- |
+| `Input APK was not found` | Confirm the filename is exactly `local-input\BalatroLatest.apk`, or pass `-InputApk`. |
+| `Input package is not com.playstack.balatro.android` | The selected file is not the expected Balatro Android package. |
+| Missing `assets/main.lua` or native libraries | Obtain the complete standalone APK rather than only a Play split. |
+| `Unsupported Android wrapper` | Use a compatible unprotected wrapper; the builder does not bypass Pairip or encrypted assets. |
+| Unsupported `assets/main.lua` hash | The game version differs from the tested build. Review compatibility before using `-AllowUnknownVersion`. |
+| Java or signer download failure | Check `java -version`, internet access, security-software quarantine, and the `.tools\` directory. |
+| Android refuses to update the app | The installed app and new APK were signed by different certificates; back up data before reinstalling. |
+
+Patched APKs contain copyrighted game files and are for the owner's personal
+use. Do not commit or redistribute the input or generated APK.
+
 ## Development
 
 Requirements:
@@ -207,19 +341,8 @@ native card previews, mocked Joker/consumable/deck mutations, the real Balatro
 input path when user-owned extracted assets are available, a sandboxed
 installer fixture, and the legacy APK injection path.
 
-The source-only Android builder remains available for the previously verified
-mobile wrapper:
-
-```powershell
-.\scripts\build.ps1
-```
-
-By default, the builder reads the compatible, legally obtained APK from
-`local-input\BalatroLatest.apk` and writes `dist\Balalaio.apk`. Use
-`-InputApk` to supply a different path. It does not remove or bypass license,
-integrity, or anti-tamper systems. The complete `local-input` directory, APKs,
-signing material, game assets, generated packages, and local extraction
-directories remain excluded from Git.
+For Android build inputs, signing choices, custom paths, installation, and
+troubleshooting, follow [Patching an Android APK](#patching-an-android-apk).
 
 ## Project boundaries
 
