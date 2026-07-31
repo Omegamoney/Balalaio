@@ -12,6 +12,7 @@
 *.key
 
 # Extracted proprietary game files and local build state
+local-input/
 .work/
 .tools/
 build/
