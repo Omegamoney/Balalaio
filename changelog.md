@@ -23,6 +23,9 @@ All notable changes to Balalaio are documented here.
 
 ### Changed
 
+- Expanded the README with a start-to-finish Android APK patching tutorial,
+  including compatible input requirements, commands, signing choices,
+  installation, update behavior, and troubleshooting.
 - Generalized the owned-Joker preview pipeline for live consumables, playing
   cards, and catalog entries without moving or cloning live bookkeeping state.
 - Consumable and deck mutations now use Balatro's normal constructors, setters,
