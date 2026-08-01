@@ -2,7 +2,7 @@
 -- Offline cheat controls for Balatro.
 
 local existing = rawget(_G, "Balalaio")
-if existing and existing.VERSION == "0.4.0" then
+if existing and existing.VERSION == "0.5.0" then
     return existing
 end
 if existing and type(existing.remove_float_button) == "function" then
@@ -10,7 +10,7 @@ if existing and type(existing.remove_float_button) == "function" then
 end
 
 local Balalaio = {
-    VERSION = "0.4.0",
+    VERSION = "0.5.0",
     ui = {
         status = "",
     },
@@ -19,6 +19,13 @@ local Balalaio = {
         joker_page = 1,
         consumable_page = 1,
         deck_page = 1,
+        deck_selection_mode = false,
+        deck_selected = {},
+        deck_bulk_scope = "all",
+        deck_bulk_page = "quick",
+        deck_bulk_remove_armed = false,
+        deck_bulk_targets = {},
+        deck_bulk_option_pages = {},
         picker_page = 1,
         picker_kind = "joker",
         picker_rarity = 0,
@@ -241,6 +248,30 @@ function Balalaio.refresh_values()
     Balalaio.values.money = format_number(G.GAME.dollars)
     Balalaio.values.current_consumables = format_number(#G.consumeables.cards)
     Balalaio.values.max_consumables = format_number(G.consumeables.config.card_limit)
+
+    local hand_config = G.hand and G.hand.config or {}
+    local starting_params = G.GAME.starting_params or {}
+    local shop = G.GAME.shop or {}
+    local probabilities = G.GAME.probabilities or {}
+    local fallback_limit = tonumber(hand_config.highlighted_limit) or 5
+    Balalaio.values.hand_size = format_number(hand_config.card_limit)
+    Balalaio.values.select_limit = format_number(fallback_limit)
+    Balalaio.values.play_limit = format_number(
+        starting_params.play_limit or fallback_limit
+    )
+    Balalaio.values.discard_limit = format_number(
+        starting_params.discard_limit or fallback_limit
+    )
+    Balalaio.values.ante = format_number(G.GAME.round_resets.ante)
+    Balalaio.values.round = format_number(G.GAME.round)
+    Balalaio.values.win_ante = format_number(G.GAME.win_ante)
+    Balalaio.values.shop_slots = format_number(shop.joker_max)
+    Balalaio.values.reroll_cost = format_number(
+        G.GAME.round_resets.reroll_cost
+    )
+    Balalaio.values.interest_amount = format_number(G.GAME.interest_amount)
+    Balalaio.values.interest_cap = format_number(G.GAME.interest_cap)
+    Balalaio.values.luck = format_number(probabilities.normal)
 end
 
 local function remove_card_now(card)
@@ -398,6 +429,15 @@ local function add_playing_card_now(front_key)
     return true
 end
 
+local function sync_deck_capacity()
+    if not G.deck or not G.deck.config then return end
+    if G.deck.config.card_limits then
+        G.deck.config.card_limits.total_slots = #(G.playing_cards or {})
+    else
+        G.deck.config.card_limit = #(G.playing_cards or {})
+    end
+end
+
 local function remove_playing_card_now(card)
     if not card or card.REMOVED or not card.playing_card then return false end
     local found = false
@@ -424,13 +464,7 @@ local function remove_playing_card_now(card)
     end
     if card.remove then
         card:remove()
-        if G.deck and G.deck.config then
-            if G.deck.config.card_limits then
-                G.deck.config.card_limits.total_slots = #G.playing_cards
-            else
-                G.deck.config.card_limit = #G.playing_cards
-            end
-        end
+        sync_deck_capacity()
         return true
     end
     return false
@@ -504,6 +538,179 @@ function Balalaio.adjust_general(key, delta)
                 G.consumeables.config.card_limit
         else
             return false
+        end
+        return true
+    end)
+end
+
+local function trim_hand_highlights()
+    if not G.hand or not G.hand.config or not G.hand.highlighted then return end
+    local limit = math.max(0, tonumber(G.hand.config.highlighted_limit) or 0)
+    while #G.hand.highlighted > limit do
+        local card = G.hand.highlighted[#G.hand.highlighted]
+        if G.hand.remove_from_highlighted then
+            local before = #G.hand.highlighted
+            local ok = pcall(function()
+                G.hand:remove_from_highlighted(card, true)
+            end)
+            if not ok and #G.hand.highlighted >= before then
+                table.remove(G.hand.highlighted)
+            end
+        else
+            table.remove(G.hand.highlighted)
+        end
+    end
+end
+
+local function change_selection_limit_now(kind, delta)
+    if not G.hand or not G.hand.config then return false end
+    G.GAME.starting_params = G.GAME.starting_params or {}
+    local params = G.GAME.starting_params
+    local key = kind == "play" and "play_limit" or "discard_limit"
+    local minimum = kind == "play" and 1 or 0
+    local current = tonumber(params[key]) or 5
+    local selection_limit = tonumber(G.hand.config.highlighted_limit) or 5
+    local target = math.max(minimum, current + delta)
+    local actual_delta = target - current
+    if actual_delta == 0 then return false end
+
+    local api = nil
+    if SMODS then
+        if kind == "play" then
+            api = SMODS.change_play_limit
+        else
+            api = SMODS.change_discard_limit
+        end
+    end
+    if type(api) == "function" then
+        api(actual_delta)
+    else
+        params[key] = target
+        if SMODS and type(SMODS.update_hand_limit_text) == "function" then
+            pcall(SMODS.update_hand_limit_text, true, true)
+        end
+    end
+    G.hand.config.highlighted_limit = math.max(selection_limit, target)
+    trim_hand_highlights()
+    return true
+end
+
+function Balalaio.adjust_extra(key, delta)
+    if not Balalaio.run_ready() then
+        set_status("Start or continue a run first.")
+        return
+    end
+
+    queue_change(function()
+        if key == "hand_size" then
+            if not G.hand or not G.hand.config then return false end
+            local current = tonumber(G.hand.config.card_limit) or 0
+            local target = math.max(
+                0,
+                current + delta
+            )
+            local actual_delta = target - current
+            if actual_delta == 0 then return false end
+            if G.hand.config.card_limits
+                and type(G.hand.change_size) == "function"
+            then
+                -- Steamodded stores the persistent delta in card_limits.mod;
+                -- card_limit itself is a derived metatable view.
+                G.hand:change_size(actual_delta)
+            else
+                G.hand.config.card_limit = target
+                G.hand.config.real_card_limit = target
+            end
+            if G.hand.align_cards then pcall(function() G.hand:align_cards() end) end
+        elseif key == "play_limit" then
+            if not change_selection_limit_now("play", delta) then return false end
+        elseif key == "discard_limit" then
+            if not change_selection_limit_now("discard", delta) then return false end
+        elseif key == "select_limit" then
+            if not G.hand or not G.hand.config then return false end
+            local current = tonumber(G.hand.config.highlighted_limit) or 5
+            local target = math.max(0, current + delta)
+            if target == current then return false end
+            G.hand.config.highlighted_limit = target
+            trim_hand_highlights()
+        elseif key == "ante" then
+            local current = tonumber(G.GAME.round_resets.ante) or 0
+            local target = math.max(0, current + delta)
+            local actual_delta = target - current
+            if actual_delta == 0 then return false end
+            G.GAME.round_resets.ante = target
+            if type(G.GAME.round_resets.blind_ante) == "number" then
+                G.GAME.round_resets.blind_ante = math.max(
+                    0,
+                    G.GAME.round_resets.blind_ante + actual_delta
+                )
+            end
+        elseif key == "round" then
+            local target = math.max(0, (tonumber(G.GAME.round) or 0) + delta)
+            if target == G.GAME.round then return false end
+            G.GAME.round = target
+        elseif key == "win_ante" then
+            local target = math.max(1, (tonumber(G.GAME.win_ante) or 1) + delta)
+            if target == G.GAME.win_ante then return false end
+            G.GAME.win_ante = target
+        elseif key == "shop_slots" then
+            if not G.GAME.shop then return false end
+            local current = tonumber(G.GAME.shop.joker_max) or 0
+            local target = math.max(0, current + delta)
+            local actual_delta = target - current
+            if actual_delta == 0 then return false end
+            if type(change_shop_size) == "function" then
+                change_shop_size(actual_delta)
+            else
+                G.GAME.shop.joker_max = target
+                if G.shop_jokers and G.shop_jokers.config then
+                    G.shop_jokers.config.card_limit = target
+                    G.shop_jokers.config.real_card_limit = target
+                end
+            end
+        elseif key == "reroll_cost" then
+            local current = tonumber(G.GAME.round_resets.reroll_cost) or 0
+            local target = math.max(0, current + delta)
+            if target == current then return false end
+            G.GAME.round_resets.reroll_cost = target
+            if type(calculate_reroll_cost) == "function" then
+                calculate_reroll_cost(true)
+            elseif G.GAME.current_round then
+                local base = G.GAME.round_resets.temp_reroll_cost or target
+                G.GAME.current_round.reroll_cost = base
+                    + (G.GAME.current_round.reroll_cost_increase or 0)
+            end
+        elseif key == "interest_amount" then
+            local target = math.max(
+                0,
+                (tonumber(G.GAME.interest_amount) or 0) + delta
+            )
+            if target == G.GAME.interest_amount then return false end
+            G.GAME.interest_amount = target
+        elseif key == "interest_cap" then
+            local target = math.max(
+                0,
+                (tonumber(G.GAME.interest_cap) or 0) + delta
+            )
+            if target == G.GAME.interest_cap then return false end
+            G.GAME.interest_cap = target
+        elseif key == "luck" then
+            G.GAME.probabilities = G.GAME.probabilities or {}
+            local target = math.max(
+                0,
+                (tonumber(G.GAME.probabilities.normal) or 1) + delta
+            )
+            if target == G.GAME.probabilities.normal then return false end
+            G.GAME.probabilities.normal = target
+        else
+            return false
+        end
+        if key == "ante" then
+            set_status("Updated ante. The active blind target is unchanged.")
+        elseif key == "hand_size" then
+            set_status("Updated hand size; draws use the new limit.")
+        else
+            set_status("Updated " .. tostring(key):gsub("_", " ") .. ".")
         end
         return true
     end)
@@ -607,6 +814,51 @@ local function general_row(label, value_key, colour)
     }
 end
 
+local function extras_row(label, value_key, colour, step)
+    step = step or 1
+    return {
+        n = G.UIT.R,
+        config = {
+            align = "cm",
+            minw = 5.25,
+            minh = 0.62,
+            padding = 0.025,
+            r = 0.08,
+            colour = G.C.UI.TRANSPARENT_DARK,
+        },
+        nodes = {
+            {
+                n = G.UIT.C,
+                config = {align = "cl", minw = 2.72, maxw = 2.72},
+                nodes = {text_node(label, 0.31, G.C.JOKER_GREY)},
+            },
+            compact_button({
+                label = "-",
+                button = "balalaio_adjust_extra",
+                ref_table = {key = value_key, delta = -step},
+                colour = G.C.RED,
+                minw = 0.66,
+                hold_repeat = true,
+            }),
+            {
+                n = G.UIT.C,
+                config = {align = "cm", minw = 0.9, maxw = 0.9},
+                nodes = {
+                    live_text_node(Balalaio.values, value_key, 0.4, colour),
+                },
+            },
+            compact_button({
+                label = "+",
+                button = "balalaio_adjust_extra",
+                ref_table = {key = value_key, delta = step},
+                colour = G.C.GREEN,
+                minw = 0.66,
+                hold_repeat = true,
+            }),
+        },
+    }
+end
+
 local function section_title(label, colour)
     return {
         n = G.UIT.R,
@@ -644,6 +896,48 @@ function Balalaio.create_general()
             "max_consumables",
             G.C.SECONDARY_SET.Tarot
         ),
+    }
+
+    return {
+        n = G.UIT.R,
+        config = {align = "tm", padding = 0.08, minw = 10.9, minh = 4.55},
+        nodes = {
+            {
+                n = G.UIT.C,
+                config = {align = "tm", padding = 0.05},
+                nodes = left,
+            },
+            {
+                n = G.UIT.C,
+                config = {align = "tm", padding = 0.05},
+                nodes = right,
+            },
+        },
+    }
+end
+
+function Balalaio.create_extras()
+    Balalaio.refresh_values()
+    local left = {
+        section_title("RUN PROGRESSION", G.C.BLUE),
+        extras_row("Ante", "ante", G.C.BLUE),
+        extras_row("Round", "round", G.C.BLUE),
+        extras_row("Winning ante", "win_ante", G.C.BLUE),
+        section_title("HAND RULES", G.C.ORANGE),
+        extras_row("Hand size", "hand_size", G.C.ORANGE),
+        extras_row("Selectable cards", "select_limit", G.C.ORANGE),
+        extras_row("Playable cards", "play_limit", G.C.ORANGE),
+        extras_row("Discardable cards", "discard_limit", G.C.ORANGE),
+    }
+
+    local right = {
+        section_title("SHOP", G.C.PURPLE),
+        extras_row("Card slots", "shop_slots", G.C.PURPLE),
+        extras_row("Base reroll cost", "reroll_cost", G.C.PURPLE),
+        section_title("ECONOMY & ODDS", G.C.MONEY),
+        extras_row("Interest per $5", "interest_amount", G.C.MONEY),
+        extras_row("Interest cap", "interest_cap", G.C.MONEY, 5),
+        extras_row("Luck", "luck", G.C.GREEN),
     }
 
     return {
@@ -1003,6 +1297,8 @@ local function gallery_column(args)
             minw = action.minw,
             minh = action.minh or 0.5,
             scale = action.scale,
+            choice = action.choice,
+            chosen = action.chosen,
         })
     end
 
@@ -1353,21 +1649,79 @@ local function sorted_playing_cards()
     return cards
 end
 
-function Balalaio.create_deck()
-    local cards = sorted_playing_cards()
+local function prune_deck_selection(cards)
+    cards = cards or sorted_playing_cards()
+    local live = {}
+    for _, card in ipairs(cards) do live[card] = true end
+    for card in pairs(Balalaio.state.deck_selected) do
+        if not live[card] then Balalaio.state.deck_selected[card] = nil end
+    end
+    return cards
+end
+
+local function deck_page_cards(cards)
+    cards = cards or sorted_playing_cards()
     local pages = page_count(#cards, DECK_PER_PAGE)
     Balalaio.state.deck_page = clamp(Balalaio.state.deck_page, 1, pages)
-
-    local page = Balalaio.state.deck_page
-    local first = (page - 1) * DECK_PER_PAGE + 1
+    local first = (Balalaio.state.deck_page - 1) * DECK_PER_PAGE + 1
     local last = math.min(#cards, first + DECK_PER_PAGE - 1)
+    local result = {}
+    for index = first, last do result[#result + 1] = cards[index] end
+    return result, first, last, pages
+end
+
+local function selected_deck_cards(cards)
+    cards = prune_deck_selection(cards)
+    local result = {}
+    for _, card in ipairs(cards) do
+        if Balalaio.state.deck_selected[card] then
+            result[#result + 1] = card
+        end
+    end
+    return result
+end
+
+local function snapshot_deck_scope(scope)
+    local cards = prune_deck_selection()
+    local result = {}
+    if scope == "page" then
+        result = deck_page_cards(cards)
+    elseif scope == "selected" then
+        result = selected_deck_cards(cards)
+    else
+        for _, card in ipairs(cards) do result[#result + 1] = card end
+        scope = "all"
+    end
+    return result, scope
+end
+
+local function set_deck_bulk_scope(scope)
+    local targets, normalized_scope = snapshot_deck_scope(scope)
+    Balalaio.state.deck_bulk_scope = normalized_scope
+    Balalaio.state.deck_bulk_targets = targets
+    Balalaio.state.deck_bulk_remove_armed = false
+    Balalaio.state.deck_bulk_option_pages = {}
+    return targets
+end
+
+function Balalaio.create_deck()
+    local cards = prune_deck_selection()
+    local page_cards, first, last, pages = deck_page_cards(cards)
+    local page = Balalaio.state.deck_page
+    local selected = selected_deck_cards(cards)
     local rows = {
         {
             n = G.UIT.R,
             config = {align = "cm", minw = 9.7, minh = 0.32},
             nodes = {
                 text_node(
-                    "ALL PLAYING CARDS  -  HOVER OR PRESS FOR DETAILS",
+                    Balalaio.state.deck_selection_mode
+                        and (
+                            "SELECT CARDS  -  "
+                            .. tostring(#selected)
+                            .. " SELECTED"
+                        )
+                        or "ALL PLAYING CARDS  -  HOVER OR PRESS FOR DETAILS",
                     0.24,
                     G.C.JOKER_GREY,
                     {shadow = true}
@@ -1403,11 +1757,22 @@ function Balalaio.create_deck()
                 last,
                 DECK_PER_PAGE,
                 function(card, index)
-                    return gallery_column({
-                        source = card,
-                        label = tostring(index) .. ". " .. playing_card_name(card),
-                        label_scale = 0.21,
-                        colour = playing_card_colour(card),
+                    local is_selected = Balalaio.state.deck_selected[card]
+                    local actions = nil
+                    if Balalaio.state.deck_selection_mode then
+                        actions = {
+                            {
+                                label = is_selected and "SELECTED" or "SELECT",
+                                button = "balalaio_toggle_deck_card",
+                                ref_table = {card = card},
+                                colour = is_selected and G.C.GREEN or G.C.GREY,
+                                minw = 1.76,
+                                scale = 0.2,
+                                choice = true,
+                                chosen = is_selected,
+                            },
+                        }
+                    else
                         actions = {
                             {
                                 label = "EDIT",
@@ -1425,7 +1790,14 @@ function Balalaio.create_deck()
                                 minw = 1.02,
                                 scale = 0.17,
                             },
-                        },
+                        }
+                    end
+                    return gallery_column({
+                        source = card,
+                        label = tostring(index) .. ". " .. playing_card_name(card),
+                        label_scale = 0.21,
+                        colour = playing_card_colour(card),
+                        actions = actions,
                     })
                 end
             ),
@@ -1433,20 +1805,87 @@ function Balalaio.create_deck()
     end
 
     rows[#rows + 1] = page_controls("deck", page, pages)
-    rows[#rows + 1] = {
-        n = G.UIT.R,
-        config = {align = "cm", minh = 0.68},
-        nodes = {
+    local action_nodes = nil
+    if Balalaio.state.deck_selection_mode then
+        action_nodes = {
             compact_button({
-                label = "+ ADD PLAYING CARD",
+                label = "PAGE",
+                button = #page_cards > 0 and "balalaio_select_deck_cards" or nil,
+                ref_table = {scope = "page"},
+                colour = #page_cards > 0 and G.C.BLUE or G.C.GREY,
+                minw = 1.55,
+                scale = 0.23,
+            }),
+            compact_button({
+                label = "ALL",
+                button = #cards > 0 and "balalaio_select_deck_cards" or nil,
+                ref_table = {scope = "all"},
+                colour = #cards > 0 and G.C.PURPLE or G.C.GREY,
+                minw = 1.55,
+                scale = 0.23,
+            }),
+            compact_button({
+                label = "CLEAR",
+                button = #selected > 0 and "balalaio_select_deck_cards" or nil,
+                ref_table = {scope = "clear"},
+                colour = #selected > 0 and G.C.RED or G.C.GREY,
+                minw = 1.55,
+                scale = 0.21,
+            }),
+            compact_button({
+                label = "BULK EDIT (" .. tostring(#selected) .. ")",
+                button = #selected > 0 and "balalaio_open_deck_bulk" or nil,
+                ref_table = {scope = "selected"},
+                colour = #selected > 0 and G.C.ORANGE or G.C.GREY,
+                minw = 2.45,
+                scale = 0.22,
+            }),
+            compact_button({
+                label = "DONE",
+                button = "balalaio_toggle_deck_selection_mode",
+                colour = G.C.GREEN,
+                minw = 1.55,
+                scale = 0.23,
+            }),
+        }
+    else
+        action_nodes = {
+            compact_button({
+                label = "+ ADD CARD",
                 button = "balalaio_open_picker",
                 ref_table = {kind = "playing", return_view = "deck"},
                 colour = G.C.GREEN,
-                minw = 4.0,
+                minw = 2.8,
                 minh = 0.62,
-                scale = 0.28,
+                scale = 0.25,
             }),
-        },
+            compact_button({
+                label = #selected > 0
+                    and ("SELECT CARDS (" .. tostring(#selected) .. ")")
+                    or "SELECT CARDS",
+                button = #cards > 0
+                    and "balalaio_toggle_deck_selection_mode"
+                    or nil,
+                colour = #cards > 0 and G.C.BLUE or G.C.GREY,
+                minw = 2.8,
+                minh = 0.62,
+                scale = 0.24,
+            }),
+            compact_button({
+                label = "BULK EDIT ALL",
+                button = #cards > 0 and "balalaio_open_deck_bulk" or nil,
+                ref_table = {scope = "all"},
+                colour = #cards > 0 and G.C.ORANGE or G.C.GREY,
+                minw = 2.8,
+                minh = 0.62,
+                scale = 0.24,
+            }),
+        }
+    end
+    rows[#rows + 1] = {
+        n = G.UIT.R,
+        config = {align = "cm", minh = 0.68},
+        nodes = action_nodes,
     }
 
     return {
@@ -1463,9 +1902,9 @@ local function tab_button(label, view, colour)
         button = "balalaio_change_view",
         ref_table = {view = view},
         colour = selected and colour or G.C.GREY,
-        minw = 2.55,
+        minw = 2.05,
         minh = 0.62,
-        scale = label == "CONSUMABLES" and 0.23 or 0.28,
+        scale = label == "CONSUMABLES" and 0.2 or 0.26,
         choice = true,
         chosen = selected,
     })
@@ -1494,6 +1933,7 @@ local function modal_tabs()
         config = {align = "cm", padding = 0.05},
         nodes = {
             tab_button("GENERAL", "general", G.C.BLUE),
+            tab_button("EXTRAS", "extras", G.C.GREEN),
             tab_button("JOKERS", "jokers", G.C.PURPLE),
             tab_button(
                 "CONSUMABLES",
@@ -1523,6 +1963,8 @@ function Balalaio.create_main_modal()
         body = Balalaio.create_consumables()
     elseif Balalaio.state.view == "deck" then
         body = Balalaio.create_deck()
+    elseif Balalaio.state.view == "extras" then
+        body = Balalaio.create_extras()
     else
         body = Balalaio.create_general()
     end
@@ -2483,6 +2925,135 @@ local function current_playing_property(card, property)
     return nil
 end
 
+local function all_playing_base_options(property)
+    local options = {}
+    local seen = {}
+    for _, descriptor in ipairs(sorted_playing_fronts()) do
+        local front = descriptor.front
+        local key = property == "suit" and front.suit or front.value
+        if key and not seen[key] then
+            options[#options + 1] = {
+                key = key,
+                label = tostring(key),
+                order = property == "suit"
+                    and (
+                        SMODS
+                        and SMODS.Suits
+                        and SMODS.Suits[key]
+                        and SMODS.Suits[key].suit_nominal
+                        or front.suit_nominal
+                        or 0
+                    )
+                    or (
+                        SMODS
+                        and SMODS.Ranks
+                        and SMODS.Ranks[key]
+                        and SMODS.Ranks[key].nominal
+                        or front.nominal
+                        or 0
+                    ),
+            }
+            seen[key] = true
+        end
+    end
+    table.sort(options, function(a, b)
+        if a.order ~= b.order then return a.order < b.order end
+        return tostring(a.key) < tostring(b.key)
+    end)
+    return options
+end
+
+local function edition_option_key(edition)
+    if not edition or not edition.value then return "base" end
+    if edition.value.foil then return "foil" end
+    if edition.value.holo then return "holographic" end
+    if edition.value.polychrome then return "polychrome" end
+    if edition.value.negative then return "negative" end
+    return string.lower(tostring(edition.label or "edition"))
+end
+
+local function bulk_edition_options()
+    local options = {}
+    for _, edition in ipairs(edition_choices("playing")) do
+        options[#options + 1] = {
+            key = edition_option_key(edition),
+            label = edition.label,
+            edition = edition,
+        }
+    end
+    return options
+end
+
+local function bulk_property_options(property)
+    if property == "suit" or property == "rank" then
+        return all_playing_base_options(property)
+    elseif property == "edition" then
+        return bulk_edition_options()
+    end
+    return playing_property_options({}, property)
+end
+
+local function current_bulk_property(card, property)
+    if property == "edition" then
+        local choices = edition_choices("playing")
+        local index = current_edition_choice_index(card, choices)
+        return edition_option_key(choices[index])
+    end
+    return current_playing_property(card, property)
+end
+
+local function set_playing_property_now(card, property, key)
+    if not editor_card_available(card, "playing") then
+        return false, "unavailable"
+    end
+    if current_bulk_property(card, property) == key then
+        return false, "unchanged"
+    end
+
+    if property == "suit" or property == "rank" then
+        local suit = property == "suit" and key or card.base.suit
+        local rank = property == "rank" and key or card.base.value
+        local front = playing_front_for(suit, rank)
+        if not front then return false, "incompatible" end
+        if SMODS and type(SMODS.change_base) == "function" then
+            if SMODS.change_base(card, suit, rank) == false then
+                return false, "incompatible"
+            end
+        elseif card.set_base then
+            card:set_base(front)
+        else
+            return false, "unavailable"
+        end
+    elseif property == "enhancement" then
+        local center = G.P_CENTERS and G.P_CENTERS[key]
+        if not center then
+            for _, option in ipairs(playing_property_options({}, property)) do
+                if option.key == key then center = option.center break end
+            end
+        end
+        if not center or not card.set_ability then
+            return false, "unavailable"
+        end
+        card:set_ability(center, nil, true)
+    elseif property == "edition" then
+        if not card.set_edition then return false, "unavailable" end
+        local selected = nil
+        for _, option in ipairs(bulk_edition_options()) do
+            if option.key == key then selected = option.edition break end
+        end
+        if not selected then return false, "unavailable" end
+        if card.ability then card.ability.queue_negative_removal = nil end
+        card:set_edition(selected.value, true, true)
+    elseif property == "seal" then
+        if not card.set_seal then return false, "unavailable" end
+        card:set_seal(key or nil, true, true)
+    else
+        return false, "unavailable"
+    end
+    if card.set_cost then card:set_cost() end
+    return true, "changed"
+end
+
 local function playing_property_row(card, label, property, colour)
     local options = playing_property_options(card, property)
     local current = current_playing_property(card, property)
@@ -2587,6 +3158,308 @@ function Balalaio.create_deck_editor_modal(card)
     })
 end
 
+local function prune_deck_bulk_targets()
+    local live = {}
+    for _, card in ipairs(G.playing_cards or {}) do
+        if card and not card.REMOVED then live[card] = true end
+    end
+    local targets = {}
+    for _, card in ipairs(Balalaio.state.deck_bulk_targets or {}) do
+        if live[card] then targets[#targets + 1] = card end
+    end
+    Balalaio.state.deck_bulk_targets = targets
+    return targets
+end
+
+local function common_bulk_property(targets, property)
+    local common = nil
+    local found = false
+    for _, card in ipairs(targets) do
+        if editor_card_available(card, "playing") then
+            local ok, value = pcall(current_bulk_property, card, property)
+            if ok then
+                if not found then
+                    common = value
+                    found = true
+                elseif common ~= value then
+                    return nil
+                end
+            end
+        end
+    end
+    return found and common or nil
+end
+
+local function compact_option_label(label, maximum)
+    label = string.upper(tostring(label or "?"))
+    maximum = maximum or 12
+    if #label > maximum then
+        return string.sub(label, 1, maximum - 1) .. "."
+    end
+    return label
+end
+
+local function bulk_property_colour(property, option)
+    if property == "suit" then
+        return (G.C.SUITS and G.C.SUITS[option.key]) or G.C.BLUE
+    elseif property == "rank" then
+        return G.C.ORANGE
+    elseif property == "enhancement" then
+        return (G.C.SECONDARY_SET and G.C.SECONDARY_SET.Enhanced)
+            or G.C.PURPLE
+    elseif property == "edition" then
+        return G.C.PURPLE
+    end
+    return G.C.GOLD
+end
+
+local function bulk_option_rows(targets, title, property, per_row, max_rows)
+    local options = bulk_property_options(property)
+    local common = common_bulk_property(targets, property)
+    max_rows = max_rows or 2
+    local per_page = per_row * max_rows
+    local pages = page_count(#options, per_page)
+    Balalaio.state.deck_bulk_option_pages =
+        Balalaio.state.deck_bulk_option_pages or {}
+    local page = clamp(
+        Balalaio.state.deck_bulk_option_pages[property] or 1,
+        1,
+        pages
+    )
+    Balalaio.state.deck_bulk_option_pages[property] = page
+    local first_option = (page - 1) * per_page + 1
+    local last_option = math.min(#options, first_option + per_page - 1)
+    local title_nodes = {
+        {
+            n = G.UIT.C,
+            config = {align = "cl", minw = 5.9},
+            nodes = {
+                text_node(title, 0.29, G.C.JOKER_GREY, {shadow = true}),
+            },
+        },
+    }
+    if pages > 1 then
+        title_nodes[#title_nodes + 1] = compact_button({
+            label = "<",
+            button = page > 1 and "balalaio_change_deck_option_page" or nil,
+            ref_table = {property = property, delta = -1},
+            colour = page > 1 and G.C.BLUE or G.C.GREY,
+            minw = 0.58,
+            minh = 0.38,
+            scale = 0.2,
+        })
+        title_nodes[#title_nodes + 1] = {
+            n = G.UIT.C,
+            config = {align = "cm", minw = 1.35},
+            nodes = {
+                text_node(
+                    tostring(page) .. " / " .. tostring(pages),
+                    0.22,
+                    G.C.JOKER_GREY
+                ),
+            },
+        }
+        title_nodes[#title_nodes + 1] = compact_button({
+            label = ">",
+            button = page < pages and "balalaio_change_deck_option_page" or nil,
+            ref_table = {property = property, delta = 1},
+            colour = page < pages and G.C.BLUE or G.C.GREY,
+            minw = 0.58,
+            minh = 0.38,
+            scale = 0.2,
+        })
+    end
+    local rows = {
+        {
+            n = G.UIT.R,
+            config = {align = "cl", minw = 9.8, minh = 0.32},
+            nodes = title_nodes,
+        },
+    }
+    local button_width = property == "rank" and 1.18
+        or (property == "suit" and 2.05 or 1.72)
+    local label_limit = property == "rank" and 7
+        or (property == "suit" and 12 or 11)
+    for first = first_option, last_option, per_row do
+        local nodes = {}
+        local last = math.min(last_option, first + per_row - 1)
+        for index = first, last do
+            local option = options[index]
+            nodes[#nodes + 1] = compact_button({
+                label = compact_option_label(option.label, label_limit),
+                button = "balalaio_apply_deck_bulk",
+                ref_table = {property = property, key = option.key},
+                colour = bulk_property_colour(property, option),
+                minw = button_width,
+                minh = 0.5,
+                scale = property == "rank" and 0.2 or 0.19,
+                choice = true,
+                chosen = common == option.key,
+            })
+        end
+        rows[#rows + 1] = {
+            n = G.UIT.R,
+            config = {align = "cm", minw = 9.8, minh = 0.52, padding = 0.015},
+            nodes = nodes,
+        }
+    end
+    return rows
+end
+
+local function append_rows(target, rows)
+    for _, row in ipairs(rows) do target[#target + 1] = row end
+end
+
+function Balalaio.create_deck_bulk_modal()
+    local targets = prune_deck_bulk_targets()
+    local all_cards = prune_deck_selection()
+    local page_cards = deck_page_cards(all_cards)
+    local selected_cards = selected_deck_cards(all_cards)
+    local scope = Balalaio.state.deck_bulk_scope or "all"
+    local page = Balalaio.state.deck_bulk_page or "quick"
+    local contents = {
+        {
+            n = G.UIT.R,
+            config = {align = "cm", minw = 10.7, minh = 0.58},
+            nodes = {
+                text_node(
+                    "BULK DECK EDITOR  -  "
+                        .. tostring(#targets)
+                        .. " TARGETS",
+                    0.48,
+                    G.C.ORANGE,
+                    {shadow = true}
+                ),
+            },
+        },
+        {
+            n = G.UIT.R,
+            config = {align = "cm", minw = 9.8, minh = 0.58, padding = 0.02},
+            nodes = {
+                compact_button({
+                    label = "ALL (" .. tostring(#all_cards) .. ")",
+                    button = "balalaio_change_deck_bulk_scope",
+                    ref_table = {scope = "all"},
+                    colour = scope == "all" and G.C.ORANGE or G.C.GREY,
+                    minw = 2.55,
+                    scale = 0.23,
+                    choice = true,
+                    chosen = scope == "all",
+                }),
+                compact_button({
+                    label = "PAGE (" .. tostring(#page_cards) .. ")",
+                    button = "balalaio_change_deck_bulk_scope",
+                    ref_table = {scope = "page"},
+                    colour = scope == "page" and G.C.BLUE or G.C.GREY,
+                    minw = 2.55,
+                    scale = 0.23,
+                    choice = true,
+                    chosen = scope == "page",
+                }),
+                compact_button({
+                    label = "SELECTED (" .. tostring(#selected_cards) .. ")",
+                    button = #selected_cards > 0
+                        and "balalaio_change_deck_bulk_scope"
+                        or nil,
+                    ref_table = {scope = "selected"},
+                    colour = scope == "selected" and G.C.GREEN or G.C.GREY,
+                    minw = 2.85,
+                    scale = 0.21,
+                    choice = true,
+                    chosen = scope == "selected",
+                }),
+            },
+        },
+        {
+            n = G.UIT.R,
+            config = {align = "cm", minw = 9.8, minh = 0.56, padding = 0.02},
+            nodes = {
+                compact_button({
+                    label = "RANK & SUIT",
+                    button = "balalaio_change_deck_bulk_page",
+                    ref_table = {page = "quick"},
+                    colour = page == "quick" and G.C.BLUE or G.C.GREY,
+                    minw = 3.25,
+                    scale = 0.24,
+                    choice = true,
+                    chosen = page == "quick",
+                }),
+                compact_button({
+                    label = "EFFECTS",
+                    button = "balalaio_change_deck_bulk_page",
+                    ref_table = {page = "effects"},
+                    colour = page == "effects" and G.C.PURPLE or G.C.GREY,
+                    minw = 3.25,
+                    scale = 0.24,
+                    choice = true,
+                    chosen = page == "effects",
+                }),
+            },
+        },
+    }
+
+    if page == "effects" then
+        append_rows(
+            contents,
+            bulk_option_rows(targets, "ENHANCEMENT", "enhancement", 5)
+        )
+        append_rows(
+            contents,
+            bulk_option_rows(targets, "EDITION", "edition", 5)
+        )
+        append_rows(contents, bulk_option_rows(targets, "SEAL", "seal", 5))
+    else
+        append_rows(contents, bulk_option_rows(targets, "SUIT", "suit", 4))
+        append_rows(contents, bulk_option_rows(targets, "RANK", "rank", 7))
+    end
+
+    contents[#contents + 1] = {
+        n = G.UIT.R,
+        config = {align = "cm", minw = 9.8, minh = 0.62, padding = 0.025},
+        nodes = {
+            compact_button({
+                label = Balalaio.state.deck_bulk_remove_armed
+                    and ("CONFIRM REMOVE " .. tostring(#targets))
+                    or ("REMOVE " .. tostring(#targets) .. " TARGETS"),
+                button = #targets > 0 and "balalaio_remove_deck_bulk" or nil,
+                colour = #targets > 0 and G.C.RED or G.C.GREY,
+                minw = 4.4,
+                minh = 0.56,
+                scale = 0.24,
+            }),
+        },
+    }
+    contents[#contents + 1] = status_row()
+
+    return create_UIBox_generic_options({
+        minw = 11.2,
+        padding = 0.08,
+        back_label = "DECK",
+        back_func = "balalaio_back_to_deck",
+        back_colour = G.C.ORANGE,
+        contents = contents,
+    })
+end
+
+function Balalaio.open_deck_bulk(scope)
+    if not Balalaio.run_ready() then
+        set_status("Start or continue a run first.")
+        return
+    end
+    if scope then
+        set_deck_bulk_scope(scope)
+        Balalaio.state.deck_bulk_page = "quick"
+    else
+        prune_deck_bulk_targets()
+    end
+    Balalaio.remove_float_button()
+    G.SETTINGS.paused = true
+    G.FUNCS.overlay_menu({
+        definition = Balalaio.create_deck_bulk_modal(),
+        config = {offset = {x = 0, y = 0}},
+    })
+end
+
 local function cycle_playing_property_now(card, property, delta)
     if not editor_card_available(card, "playing") then return false end
     local options = playing_property_options(card, property)
@@ -2594,32 +3467,7 @@ local function cycle_playing_property_now(card, property, delta)
     local current = current_playing_property(card, property)
     local new_index = ((option_index(options, current) - 1 + delta) % #options) + 1
     local selected = options[new_index]
-
-    if property == "suit" or property == "rank" then
-        local suit = property == "suit" and selected.key or card.base.suit
-        local rank = property == "rank" and selected.key or card.base.value
-        local front = playing_front_for(suit, rank)
-        if not front then return false end
-        if SMODS and type(SMODS.change_base) == "function" then
-            if SMODS.change_base(card, suit, rank) == false then return false end
-        elseif card.set_base then
-            card:set_base(front)
-        else
-            return false
-        end
-    elseif property == "enhancement" then
-        local center = selected.center
-            or (G.P_CENTERS and G.P_CENTERS[selected.key])
-        if not center or not card.set_ability then return false end
-        card:set_ability(center, nil, true)
-    elseif property == "seal" then
-        if not card.set_seal then return false end
-        card:set_seal(selected.key or nil, true, true)
-    else
-        return false
-    end
-    if card.set_cost then card:set_cost() end
-    return true
+    return set_playing_property_now(card, property, selected.key)
 end
 
 function Balalaio.open_editor(card, kind)
@@ -3027,6 +3875,11 @@ G.FUNCS.balalaio_adjust = function(element)
     if action then Balalaio.adjust_general(action.key, action.delta) end
 end
 
+G.FUNCS.balalaio_adjust_extra = function(element)
+    local action = element and element.config and element.config.ref_table
+    if action then Balalaio.adjust_extra(action.key, action.delta) end
+end
+
 G.FUNCS.balalaio_change_view = function(element)
     local action = element and element.config and element.config.ref_table
     if action and action.view then Balalaio.open(action.view) end
@@ -3189,6 +4042,231 @@ G.FUNCS.balalaio_edit_playing_card = function(element)
     if not action or not action.card then return end
     set_status("")
     Balalaio.open_editor(action.card, "playing")
+end
+
+G.FUNCS.balalaio_toggle_deck_selection_mode = function()
+    Balalaio.state.deck_selection_mode = not Balalaio.state.deck_selection_mode
+    Balalaio.state.deck_bulk_remove_armed = false
+    set_status(
+        Balalaio.state.deck_selection_mode
+            and "Select individual cards, a page, or the whole deck."
+            or "Card selection saved for bulk editing."
+    )
+    Balalaio.open("deck")
+end
+
+G.FUNCS.balalaio_toggle_deck_card = function(element)
+    local action = element and element.config and element.config.ref_table
+    local card = action and action.card
+    if not card or card.REMOVED or not card_in_list(card, G.playing_cards) then
+        set_status("That playing card is no longer available.")
+        Balalaio.open("deck")
+        return
+    end
+    if Balalaio.state.deck_selected[card] then
+        Balalaio.state.deck_selected[card] = nil
+    else
+        Balalaio.state.deck_selected[card] = true
+    end
+    Balalaio.state.deck_bulk_remove_armed = false
+    set_status(
+        tostring(#selected_deck_cards()) .. " playing cards selected."
+    )
+    Balalaio.open("deck")
+end
+
+G.FUNCS.balalaio_select_deck_cards = function(element)
+    local action = element and element.config and element.config.ref_table
+    local scope = action and action.scope or "clear"
+    local cards = prune_deck_selection()
+    if scope == "clear" then
+        Balalaio.state.deck_selected = {}
+    else
+        local targets = scope == "page" and deck_page_cards(cards) or cards
+        for _, card in ipairs(targets) do
+            Balalaio.state.deck_selected[card] = true
+        end
+    end
+    Balalaio.state.deck_bulk_remove_armed = false
+    set_status(
+        tostring(#selected_deck_cards(cards)) .. " playing cards selected."
+    )
+    Balalaio.open("deck")
+end
+
+G.FUNCS.balalaio_open_deck_bulk = function(element)
+    local action = element and element.config and element.config.ref_table
+    local scope = action and action.scope
+        or (Balalaio.state.deck_selection_mode and "selected" or "all")
+    set_status("")
+    Balalaio.open_deck_bulk(scope)
+end
+
+G.FUNCS.balalaio_change_deck_bulk_scope = function(element)
+    local action = element and element.config and element.config.ref_table
+    if not action or not action.scope then return end
+    set_deck_bulk_scope(action.scope)
+    set_status("")
+    Balalaio.open_deck_bulk()
+end
+
+G.FUNCS.balalaio_change_deck_bulk_page = function(element)
+    local action = element and element.config and element.config.ref_table
+    if not action or not action.page then return end
+    Balalaio.state.deck_bulk_page = action.page == "effects"
+        and "effects"
+        or "quick"
+    Balalaio.state.deck_bulk_remove_armed = false
+    set_status("")
+    Balalaio.open_deck_bulk()
+end
+
+G.FUNCS.balalaio_change_deck_option_page = function(element)
+    local action = element and element.config and element.config.ref_table
+    if not action or not action.property or not action.delta then return end
+    Balalaio.state.deck_bulk_option_pages =
+        Balalaio.state.deck_bulk_option_pages or {}
+    Balalaio.state.deck_bulk_option_pages[action.property] =
+        (Balalaio.state.deck_bulk_option_pages[action.property] or 1)
+        + action.delta
+    Balalaio.state.deck_bulk_remove_armed = false
+    set_status("")
+    Balalaio.open_deck_bulk()
+end
+
+G.FUNCS.balalaio_apply_deck_bulk = function(element)
+    local action = element and element.config and element.config.ref_table
+    if not action or not action.property then return end
+    local targets = {}
+    for _, card in ipairs(prune_deck_bulk_targets()) do
+        targets[#targets + 1] = card
+    end
+    Balalaio.state.deck_bulk_remove_armed = false
+
+    queue_change(function()
+        local changed = 0
+        local unchanged = 0
+        local skipped = 0
+        local errors = 0
+        for _, card in ipairs(targets) do
+            local ok, did_change, reason = pcall(
+                set_playing_property_now,
+                card,
+                action.property,
+                action.key
+            )
+            if ok and did_change then
+                changed = changed + 1
+            elseif ok and reason == "unchanged" then
+                unchanged = unchanged + 1
+            elseif not ok then
+                errors = errors + 1
+            else
+                skipped = skipped + 1
+            end
+        end
+
+        if changed == 0 and errors == 0 then
+            set_status(
+                "No cards changed ("
+                    .. tostring(unchanged)
+                    .. " already matched, "
+                    .. tostring(skipped)
+                    .. " skipped)."
+            )
+            return false
+        end
+        set_status(
+            "Updated "
+                .. tostring(changed)
+                .. " cards; "
+                .. tostring(unchanged)
+                .. " already matched, "
+                .. tostring(skipped)
+                .. " skipped, "
+                .. tostring(errors)
+                .. " errors."
+        )
+        -- A mod hook may mutate a card before raising. Persist whenever an
+        -- error occurred so a partially applied native setter is not lost.
+        return true
+    end, function()
+        Balalaio.open_deck_bulk()
+    end)
+end
+
+G.FUNCS.balalaio_remove_deck_bulk = function()
+    local targets = {}
+    for _, card in ipairs(prune_deck_bulk_targets()) do
+        targets[#targets + 1] = card
+    end
+    if #targets == 0 then
+        set_status("There are no cards in this target set.")
+        Balalaio.open_deck_bulk()
+        return
+    end
+    if not Balalaio.state.deck_bulk_remove_armed then
+        Balalaio.state.deck_bulk_remove_armed = true
+        set_status("Press REMOVE again to confirm this run-changing action.")
+        Balalaio.open_deck_bulk()
+        return
+    end
+
+    queue_change(function()
+        local removable = {}
+        for _, card in ipairs(targets) do
+            if editor_card_available(card, "playing") then
+                removable[#removable + 1] = card
+            end
+        end
+        if #removable == 0 then
+            set_status("None of those cards can be removed right now.")
+            return false
+        end
+        local removed = 0
+        local removed_cards = {}
+        local errors = 0
+        for _, card in ipairs(removable) do
+            local ok = pcall(function()
+                if not card.remove then error("Card has no remove method") end
+                card:remove()
+            end)
+            if ok then
+                removed = removed + 1
+                removed_cards[#removed_cards + 1] = card
+                Balalaio.state.deck_selected[card] = nil
+            else
+                errors = errors + 1
+            end
+        end
+        sync_deck_capacity()
+        local context_error = false
+        if #removed_cards > 0
+            and SMODS
+            and type(SMODS.calculate_context) == "function"
+        then
+            context_error = not pcall(SMODS.calculate_context, {
+                remove_playing_cards = true,
+                removed = removed_cards,
+            })
+        end
+        set_status(
+            "Removed "
+                .. tostring(removed)
+                .. " cards; "
+                .. tostring(#targets - removed)
+                .. " skipped ("
+                .. tostring(errors)
+                .. " errors"
+                .. (context_error and ", context failed" or "")
+                .. ")."
+        )
+        return removed > 0 or errors > 0 or context_error
+    end, function(changed)
+        Balalaio.state.deck_bulk_remove_armed = false
+        if changed then Balalaio.state.deck_bulk_targets = {} end
+        Balalaio.open(changed and "deck" or Balalaio.state.view)
+    end)
 end
 
 G.FUNCS.balalaio_back_to_jokers = function()

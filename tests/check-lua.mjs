@@ -29,6 +29,15 @@ for (const callback of [
   "balalaio_add_joker",
   "balalaio_remove_joker",
   "balalaio_adjust_modifier",
+  "balalaio_adjust_extra",
+  "balalaio_toggle_deck_selection_mode",
+  "balalaio_toggle_deck_card",
+  "balalaio_select_deck_cards",
+  "balalaio_open_deck_bulk",
+  "balalaio_change_deck_bulk_scope",
+  "balalaio_change_deck_bulk_page",
+  "balalaio_apply_deck_bulk",
+  "balalaio_remove_deck_bulk",
 ]) {
   assert.match(source, new RegExp(`G\\.FUNCS\\.${callback}\\s*=`));
 }
@@ -41,8 +50,40 @@ for (const runtimePath of [
   "G.jokers.config.card_limit",
   "G.GAME.dollars",
   "G.consumeables.config.card_limit",
+  "G.hand.config.card_limit",
+  "G.hand.config.highlighted_limit",
+  "G.GAME.starting_params",
+  "G.GAME.round_resets.ante",
+  "G.GAME.round",
+  "G.GAME.win_ante",
+  "G.GAME.shop.joker_max",
+  "G.GAME.round_resets.reroll_cost",
+  "G.GAME.interest_amount",
+  "G.GAME.interest_cap",
+  "G.GAME.probabilities.normal",
 ]) {
   assert.ok(source.includes(runtimePath), `Missing runtime mapping: ${runtimePath}`);
+}
+
+assert.match(source, /tab_button\(\s*["']EXTRAS["']\s*,\s*["']extras["']/u);
+assert.match(source, /function\s+Balalaio\.create_extras\s*\(/u);
+
+for (const nativeMutation of [
+  "G.hand:change_size",
+  "SMODS.change_play_limit",
+  "SMODS.change_discard_limit",
+  "change_shop_size",
+  "calculate_reroll_cost",
+  "SMODS.change_base",
+  "card:set_ability",
+  "card:set_edition",
+  "card:set_seal",
+  "SMODS.calculate_context",
+]) {
+  assert.ok(
+    source.includes(nativeMutation),
+    `Missing native mutation path: ${nativeMutation}`,
+  );
 }
 
 console.log(`Lua 5.1 parse passed (${ast.body.length} top-level statements).`);

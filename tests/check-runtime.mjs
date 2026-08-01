@@ -208,8 +208,27 @@ G = {
     STAGE = 1,
     SETTINGS = {paused = false},
     GAME = {
-        current_round = {hands_left = 2, discards_left = 1},
-        round_resets = {hands = 4, discards = 3},
+        current_round = {
+            hands_left = 2,
+            discards_left = 1,
+            reroll_cost = 7,
+            reroll_cost_increase = 2,
+        },
+        round_resets = {
+            hands = 4,
+            discards = 3,
+            ante = 3,
+            blind_ante = 3,
+            reroll_cost = 5,
+            temp_reroll_cost = 5,
+        },
+        starting_params = {play_limit = 5, discard_limit = 4},
+        round = 2,
+        win_ante = 8,
+        shop = {joker_max = 2},
+        interest_amount = 1,
+        interest_cap = 25,
+        probabilities = {normal = 1},
         dollars = 10,
         banned_keys = {},
         used_jokers = {},
@@ -218,9 +237,10 @@ G = {
     jokers = make_area(1),
     consumeables = make_area(1),
     deck = make_area(0),
-    hand = make_area(52),
+    hand = make_area(8),
     discard = make_area(52),
     play = make_area(5),
+    shop_jokers = make_area(2),
     playing_cards = {},
     playing_card = 3,
     P_CENTERS = {
@@ -415,6 +435,27 @@ G = {
     },
 }
 G.deck.config.card_limits = {total_slots = 0}
+G.hand.config.card_limits = {base = 8, mod = 0}
+G.hand.config.highlighted_limit = 5
+G.hand.highlighted = {}
+function G.hand:change_size(delta)
+    self.change_size_calls = (self.change_size_calls or 0) + 1
+    self.last_size_delta = delta
+    self.config.card_limits.mod = self.config.card_limits.mod + delta
+    self.config.card_limit = self.config.card_limit + delta
+end
+function G.hand:align_cards()
+    self.align_calls = (self.align_calls or 0) + 1
+end
+function G.hand:remove_from_highlighted(card)
+    self.remove_highlighted_calls = (self.remove_highlighted_calls or 0) + 1
+    for index = #self.highlighted, 1, -1 do
+        if self.highlighted[index] == card then
+            table.remove(self.highlighted, index)
+            return
+        end
+    end
+end
 G.P_CENTER_POOLS.Joker = {
     G.P_CENTERS.j_test,
     G.P_CENTERS.j_lower_xmult,
@@ -468,6 +509,47 @@ function SMODS.change_base(card, suit, rank)
         suit_nominal = front.suit_nominal,
     }
     return true
+end
+
+local function update_mock_highlight_limit(action_limit)
+    G.hand.config.highlighted_limit = math.max(
+        G.hand.config.highlighted_limit or 0,
+        action_limit
+    )
+end
+
+function SMODS.change_play_limit(delta)
+    SMODS.change_play_limit_calls = (SMODS.change_play_limit_calls or 0) + 1
+    SMODS.last_play_limit_delta = delta
+    G.GAME.starting_params.play_limit =
+        G.GAME.starting_params.play_limit + delta
+    update_mock_highlight_limit(G.GAME.starting_params.play_limit)
+end
+
+function SMODS.change_discard_limit(delta)
+    SMODS.change_discard_limit_calls =
+        (SMODS.change_discard_limit_calls or 0) + 1
+    SMODS.last_discard_limit_delta = delta
+    G.GAME.starting_params.discard_limit =
+        G.GAME.starting_params.discard_limit + delta
+    update_mock_highlight_limit(G.GAME.starting_params.discard_limit)
+end
+
+function change_shop_size(delta)
+    G.change_shop_size_calls = (G.change_shop_size_calls or 0) + 1
+    G.last_shop_size_delta = delta
+    G.GAME.shop.joker_max = G.GAME.shop.joker_max + delta
+    G.shop_jokers.config.card_limit = G.GAME.shop.joker_max
+    G.shop_jokers.config.real_card_limit = G.GAME.shop.joker_max
+end
+
+function calculate_reroll_cost(force)
+    G.calculate_reroll_cost_calls =
+        (G.calculate_reroll_cost_calls or 0) + 1
+    G.last_calculate_reroll_force = force
+    G.GAME.current_round.reroll_cost =
+        G.GAME.round_resets.reroll_cost
+        + (G.GAME.current_round.reroll_cost_increase or 0)
 end
 
 function SMODS.calculate_context(context)
@@ -589,6 +671,172 @@ Balalaio.adjust_general("current_hands", -10)
 Balalaio.adjust_general("current_discards", -10)
 assert(G.GAME.current_round.hands_left == 0)
 assert(G.GAME.current_round.discards_left == 0)
+
+-- Extras expose each gameplay-level value, use native mutation helpers, clamp
+-- their documented lower bounds, and persist exactly once per real change.
+Balalaio.refresh_values()
+assert(Balalaio.values.hand_size == "8")
+assert(Balalaio.values.play_limit == "5")
+assert(Balalaio.values.discard_limit == "4")
+assert(Balalaio.values.select_limit == "5")
+assert(Balalaio.values.ante == "3")
+assert(Balalaio.values.round == "2")
+assert(Balalaio.values.win_ante == "8")
+assert(Balalaio.values.shop_slots == "2")
+assert(Balalaio.values.reroll_cost == "5")
+assert(Balalaio.values.interest_amount == "1")
+assert(Balalaio.values.interest_cap == "25")
+assert(Balalaio.values.luck == "1")
+
+local expected_extra_saves = G.save_run_calls
+local function adjust_extra_and_expect_save(key, delta)
+    G.FUNCS.balalaio_adjust_extra({
+        config = {ref_table = {key = key, delta = delta}},
+    })
+    expected_extra_saves = expected_extra_saves + 1
+    assert(
+        G.save_run_calls == expected_extra_saves,
+        key .. " must save exactly once"
+    )
+end
+
+adjust_extra_and_expect_save("hand_size", 2)
+assert(G.hand.config.card_limit == 10)
+assert(G.hand.config.card_limits.mod == 2)
+assert(G.hand.change_size_calls == 1 and G.hand.last_size_delta == 2)
+assert(G.hand.align_calls == 1)
+
+adjust_extra_and_expect_save("play_limit", 2)
+assert(G.GAME.starting_params.play_limit == 7)
+assert(SMODS.change_play_limit_calls == 1)
+assert(SMODS.last_play_limit_delta == 2)
+
+adjust_extra_and_expect_save("discard_limit", 2)
+assert(G.GAME.starting_params.discard_limit == 6)
+assert(SMODS.change_discard_limit_calls == 1)
+assert(SMODS.last_discard_limit_delta == 2)
+assert(G.hand.config.highlighted_limit == 7)
+adjust_extra_and_expect_save("select_limit", 1)
+assert(G.hand.config.highlighted_limit == 8)
+
+adjust_extra_and_expect_save("ante", 1)
+assert(G.GAME.round_resets.ante == 4)
+assert(G.GAME.round_resets.blind_ante == 4)
+adjust_extra_and_expect_save("round", 1)
+assert(G.GAME.round == 3)
+adjust_extra_and_expect_save("win_ante", 1)
+assert(G.GAME.win_ante == 9)
+
+adjust_extra_and_expect_save("shop_slots", 1)
+assert(G.GAME.shop.joker_max == 3)
+assert(G.shop_jokers.config.card_limit == 3)
+assert(G.shop_jokers.config.real_card_limit == 3)
+assert(G.change_shop_size_calls == 1 and G.last_shop_size_delta == 1)
+
+adjust_extra_and_expect_save("reroll_cost", 2)
+assert(G.GAME.round_resets.reroll_cost == 7)
+assert(G.GAME.current_round.reroll_cost == 9)
+assert(G.calculate_reroll_cost_calls == 1)
+assert(G.last_calculate_reroll_force == true)
+
+adjust_extra_and_expect_save("interest_amount", 1)
+assert(G.GAME.interest_amount == 2)
+adjust_extra_and_expect_save("interest_cap", 5)
+assert(G.GAME.interest_cap == 30)
+adjust_extra_and_expect_save("luck", 1)
+assert(G.GAME.probabilities.normal == 2)
+
+G.hand.highlighted = {{}, {}, {}, {}, {}, {}, {}}
+adjust_extra_and_expect_save("hand_size", -100)
+assert(G.hand.config.card_limit == 0)
+assert(G.hand.config.card_limits.mod == -8)
+assert(G.hand.change_size_calls == 2 and G.hand.last_size_delta == -10)
+assert(G.hand.align_calls == 2)
+adjust_extra_and_expect_save("select_limit", -100)
+assert(G.hand.config.highlighted_limit == 0)
+assert(#G.hand.highlighted == 0)
+assert(G.hand.remove_highlighted_calls == 7)
+adjust_extra_and_expect_save("play_limit", -100)
+assert(G.GAME.starting_params.play_limit == 1)
+assert(SMODS.change_play_limit_calls == 2)
+assert(SMODS.last_play_limit_delta == -6)
+assert(G.hand.config.highlighted_limit == 1)
+assert(#G.hand.highlighted == 0)
+adjust_extra_and_expect_save("discard_limit", -100)
+assert(G.GAME.starting_params.discard_limit == 0)
+assert(SMODS.change_discard_limit_calls == 2)
+assert(SMODS.last_discard_limit_delta == -6)
+assert(G.hand.config.highlighted_limit == 1)
+assert(#G.hand.highlighted == 0)
+adjust_extra_and_expect_save("select_limit", -100)
+assert(G.hand.config.highlighted_limit == 0)
+assert(#G.hand.highlighted == 0)
+assert(G.hand.remove_highlighted_calls == 7)
+
+adjust_extra_and_expect_save("ante", -100)
+assert(G.GAME.round_resets.ante == 0)
+assert(G.GAME.round_resets.blind_ante == 0)
+adjust_extra_and_expect_save("round", -100)
+assert(G.GAME.round == 0)
+adjust_extra_and_expect_save("win_ante", -100)
+assert(G.GAME.win_ante == 1)
+adjust_extra_and_expect_save("shop_slots", -100)
+assert(G.GAME.shop.joker_max == 0)
+assert(G.shop_jokers.config.card_limit == 0)
+assert(G.change_shop_size_calls == 2 and G.last_shop_size_delta == -3)
+adjust_extra_and_expect_save("reroll_cost", -100)
+assert(G.GAME.round_resets.reroll_cost == 0)
+assert(G.GAME.current_round.reroll_cost == 2)
+assert(G.calculate_reroll_cost_calls == 2)
+adjust_extra_and_expect_save("interest_amount", -100)
+assert(G.GAME.interest_amount == 0)
+adjust_extra_and_expect_save("interest_cap", -100)
+assert(G.GAME.interest_cap == 0)
+adjust_extra_and_expect_save("luck", -100)
+assert(G.GAME.probabilities.normal == 0)
+
+local saves_at_extra_bounds = G.save_run_calls
+for _, key in ipairs({
+    "hand_size",
+    "play_limit",
+    "discard_limit",
+    "select_limit",
+    "ante",
+    "round",
+    "win_ante",
+    "shop_slots",
+    "reroll_cost",
+    "interest_amount",
+    "interest_cap",
+    "luck",
+    "not_an_extra",
+}) do
+    G.FUNCS.balalaio_adjust_extra({
+        config = {ref_table = {key = key, delta = -1}},
+    })
+    assert(
+        G.save_run_calls == saves_at_extra_bounds,
+        key .. " must not save at its lower bound"
+    )
+end
+assert(G.hand.change_size_calls == 2)
+assert(SMODS.change_play_limit_calls == 2)
+assert(SMODS.change_discard_limit_calls == 2)
+assert(G.change_shop_size_calls == 2)
+assert(G.calculate_reroll_cost_calls == 2)
+Balalaio.refresh_values()
+assert(Balalaio.values.hand_size == "0")
+assert(Balalaio.values.play_limit == "1")
+assert(Balalaio.values.discard_limit == "0")
+assert(Balalaio.values.select_limit == "0")
+assert(Balalaio.values.ante == "0")
+assert(Balalaio.values.round == "0")
+assert(Balalaio.values.win_ante == "1")
+assert(Balalaio.values.shop_slots == "0")
+assert(Balalaio.values.reroll_cost == "0")
+assert(Balalaio.values.interest_amount == "0")
+assert(Balalaio.values.interest_cap == "0")
+assert(Balalaio.values.luck == "0")
 
 local real_open = Balalaio.open
 local real_open_editor = Balalaio.open_editor
@@ -1549,6 +1797,256 @@ assert(G.deck.config.card_limits.total_slots == 2)
 assert(SMODS.context_calls == contexts_before_stale_deck)
 assert(SMODS.change_base_calls == change_base_before_stale)
 assert(G.save_run_calls == saves_before_stale_deck)
+
+-- Build a seven-card deck so selection can cover all, a partial second page,
+-- and an exact custom set without depending on the earlier editor fixtures.
+G.playing_cards = {}
+G.deck.cards = {}
+G.playing_card = 0
+Balalaio.state.deck_page = 1
+Balalaio.state.deck_selected = {}
+Balalaio.state.deck_bulk_targets = {}
+Balalaio.state.deck_bulk_remove_armed = false
+local bulk_cards = {}
+local bulk_fronts = {
+    G.P_CARDS.S_2,
+    G.P_CARDS.H_2,
+    G.P_CARDS.C_2,
+    G.P_CARDS.D_2,
+    G.P_CARDS.S_2,
+    G.P_CARDS.H_2,
+    G.P_CARDS.C_2,
+}
+for index, front in ipairs(bulk_fronts) do
+    bulk_cards[index] = create_playing_card(
+        {front = front, center = G.P_CENTERS.c_base},
+        G.deck
+    )
+end
+G.deck.config.card_limits.total_slots = #G.playing_cards
+
+local function selected_count()
+    local count = 0
+    for _, chosen in pairs(Balalaio.state.deck_selected) do
+        if chosen then count = count + 1 end
+    end
+    return count
+end
+
+local saves_before_deck_selection = G.save_run_calls
+G.FUNCS.balalaio_select_deck_cards({
+    config = {ref_table = {scope = "all"}},
+})
+assert(selected_count() == 7)
+for _, selected_card in ipairs(bulk_cards) do
+    assert(Balalaio.state.deck_selected[selected_card])
+end
+
+G.FUNCS.balalaio_select_deck_cards({
+    config = {ref_table = {scope = "clear"}},
+})
+Balalaio.state.deck_page = 2
+G.FUNCS.balalaio_select_deck_cards({
+    config = {ref_table = {scope = "page"}},
+})
+assert(selected_count() == 2)
+assert(Balalaio.state.deck_selected[bulk_cards[4]])
+assert(Balalaio.state.deck_selected[bulk_cards[7]])
+
+G.FUNCS.balalaio_open_deck_bulk({
+    config = {ref_table = {scope = "page"}},
+})
+assert(Balalaio.state.deck_bulk_scope == "page")
+assert(#Balalaio.state.deck_bulk_targets == 2)
+for _, target in ipairs(Balalaio.state.deck_bulk_targets) do
+    assert(Balalaio.state.deck_selected[target])
+end
+
+G.FUNCS.balalaio_select_deck_cards({
+    config = {ref_table = {scope = "clear"}},
+})
+G.FUNCS.balalaio_toggle_deck_card({
+    config = {ref_table = {card = bulk_cards[1]}},
+})
+G.FUNCS.balalaio_toggle_deck_card({
+    config = {ref_table = {card = bulk_cards[3]}},
+})
+assert(selected_count() == 2)
+assert(Balalaio.state.deck_selected[bulk_cards[1]])
+assert(Balalaio.state.deck_selected[bulk_cards[3]])
+
+local stale_selection = {playing_card = 999}
+Balalaio.state.deck_selected[stale_selection] = true
+G.FUNCS.balalaio_toggle_deck_card({
+    config = {ref_table = {card = bulk_cards[3]}},
+})
+assert(Balalaio.state.deck_selected[stale_selection] == nil)
+assert(selected_count() == 1)
+G.FUNCS.balalaio_toggle_deck_card({
+    config = {ref_table = {card = bulk_cards[3]}},
+})
+assert(selected_count() == 2)
+assert(G.save_run_calls == saves_before_deck_selection)
+
+-- Scope changes snapshot stable card identities. Later selection changes must
+-- not silently retarget an already-open batch operation.
+G.FUNCS.balalaio_open_deck_bulk({
+    config = {ref_table = {scope = "selected"}},
+})
+assert(Balalaio.state.deck_bulk_scope == "selected")
+assert(#Balalaio.state.deck_bulk_targets == 2)
+local stable_target_one = Balalaio.state.deck_bulk_targets[1]
+local stable_target_two = Balalaio.state.deck_bulk_targets[2]
+assert(
+    (stable_target_one == bulk_cards[1] and stable_target_two == bulk_cards[3])
+    or (stable_target_one == bulk_cards[3] and stable_target_two == bulk_cards[1])
+)
+G.FUNCS.balalaio_select_deck_cards({
+    config = {ref_table = {scope = "clear"}},
+})
+G.FUNCS.balalaio_toggle_deck_card({
+    config = {ref_table = {card = bulk_cards[2]}},
+})
+assert(#Balalaio.state.deck_bulk_targets == 2)
+assert(Balalaio.state.deck_bulk_targets[1] == stable_target_one)
+assert(Balalaio.state.deck_bulk_targets[2] == stable_target_two)
+
+local function apply_bulk(property, key, should_save)
+    local saves_before = G.save_run_calls
+    G.FUNCS.balalaio_apply_deck_bulk({
+        config = {ref_table = {property = property, key = key}},
+    })
+    assert(
+        G.save_run_calls == saves_before + (should_save and 1 or 0),
+        property .. " bulk save count was wrong"
+    )
+end
+
+local change_base_before_stable_bulk = SMODS.change_base_calls
+apply_bulk("rank", "3", true)
+assert(stable_target_one.base.value == "3")
+assert(stable_target_two.base.value == "3")
+assert(bulk_cards[2].base.value == "2")
+assert(SMODS.change_base_calls == change_base_before_stable_bulk + 2)
+
+Balalaio.state.deck_bulk_targets[#Balalaio.state.deck_bulk_targets + 1] =
+    {playing_card = 1000}
+apply_bulk("rank", "3", false)
+assert(#Balalaio.state.deck_bulk_targets == 2)
+assert(Balalaio.ui.status == "No cards changed (2 already matched, 0 skipped).")
+
+G.FUNCS.balalaio_change_deck_bulk_scope({
+    config = {ref_table = {scope = "all"}},
+})
+assert(Balalaio.state.deck_bulk_scope == "all")
+assert(#Balalaio.state.deck_bulk_targets == 7)
+assert(G.save_run_calls == saves_before_deck_selection + 1)
+
+-- Quick switches use exact values, preserve the complementary base property,
+-- and save once for the whole target set rather than once per card.
+apply_bulk("suit", "Hearts", true)
+for _, target in ipairs(bulk_cards) do
+    assert(target.base.suit == "Hearts")
+end
+apply_bulk("rank", "3", true)
+for _, target in ipairs(bulk_cards) do
+    assert(target.base.suit == "Hearts")
+    assert(target.base.value == "3")
+    assert(target.config.card == G.P_CARDS.H_3)
+end
+
+apply_bulk("enhancement", "m_bonus", true)
+for _, target in ipairs(bulk_cards) do
+    assert(target.config.center == G.P_CENTERS.m_bonus)
+end
+apply_bulk("edition", "holographic", true)
+for _, target in ipairs(bulk_cards) do
+    assert(target.edition and target.edition.holo)
+end
+apply_bulk("seal", "Blue", true)
+for _, target in ipairs(bulk_cards) do
+    assert(target.seal == "Blue")
+end
+
+local saves_before_bulk_noops = G.save_run_calls
+apply_bulk("suit", "Hearts", false)
+apply_bulk("rank", "3", false)
+apply_bulk("enhancement", "m_bonus", false)
+apply_bulk("edition", "holographic", false)
+apply_bulk("seal", "Blue", false)
+assert(G.save_run_calls == saves_before_bulk_noops)
+
+-- A target that becomes temporarily unsafe stays in the stable snapshot, is
+-- skipped without invoking its setter, and does not prevent valid mutations.
+local unavailable = bulk_cards[7]
+local unavailable_seal_calls = unavailable.set_seal_calls or 0
+unavailable.area = G.play
+apply_bulk("seal", "Red", true)
+assert(unavailable.seal == "Blue")
+assert((unavailable.set_seal_calls or 0) == unavailable_seal_calls)
+assert(
+    Balalaio.ui.status
+        == "Updated 6 cards; 0 already matched, 1 skipped, 0 errors.",
+    "unexpected unavailable-target status: " .. tostring(Balalaio.ui.status)
+)
+unavailable.area = G.deck
+apply_bulk("seal", "Red", true)
+for _, target in ipairs(bulk_cards) do assert(target.seal == "Red") end
+assert(
+    Balalaio.ui.status
+        == "Updated 1 cards; 6 already matched, 0 skipped, 0 errors.",
+    "unexpected catch-up status: " .. tostring(Balalaio.ui.status)
+)
+
+-- Removal requires two presses, reports only successful removals in one
+-- aggregate SMODS context, updates capacity synchronously, and saves one batch.
+Balalaio.state.deck_selected = {}
+for index = 1, 3 do
+    G.FUNCS.balalaio_toggle_deck_card({
+        config = {ref_table = {card = bulk_cards[index]}},
+    })
+end
+G.FUNCS.balalaio_open_deck_bulk({
+    config = {ref_table = {scope = "selected"}},
+})
+assert(#Balalaio.state.deck_bulk_targets == 3)
+local saves_before_bulk_remove = G.save_run_calls
+local contexts_before_bulk_remove = SMODS.context_calls
+local failed_bulk_remove = bulk_cards[2]
+local original_failed_remove = failed_bulk_remove.remove
+failed_bulk_remove.remove = function()
+    error("forced bulk removal failure")
+end
+G.lifecycle_log = {}
+G.FUNCS.balalaio_remove_deck_bulk()
+assert(Balalaio.state.deck_bulk_remove_armed)
+assert(#G.playing_cards == 7)
+assert(SMODS.context_calls == contexts_before_bulk_remove)
+assert(G.save_run_calls == saves_before_bulk_remove)
+
+G.FUNCS.balalaio_remove_deck_bulk()
+assert(not Balalaio.state.deck_bulk_remove_armed)
+assert(SMODS.context_calls == contexts_before_bulk_remove + 1)
+assert(SMODS.last_context.remove_playing_cards)
+assert(#SMODS.last_context.removed == 2)
+assert(SMODS.last_context.removed[1] == bulk_cards[1])
+assert(SMODS.last_context.removed[2] == bulk_cards[3])
+assert(bulk_cards[1].REMOVED)
+assert(not bulk_cards[2].REMOVED)
+assert(bulk_cards[3].REMOVED)
+assert(Balalaio.state.deck_selected[bulk_cards[1]] == nil)
+assert(Balalaio.state.deck_selected[bulk_cards[2]])
+assert(Balalaio.state.deck_selected[bulk_cards[3]] == nil)
+assert(G.lifecycle_log[1] ~= "remove_context")
+assert(G.lifecycle_log[#G.lifecycle_log] == "remove_context")
+assert(#G.lifecycle_log == 3)
+assert(#G.playing_cards == 5)
+assert(#G.deck.cards == 5)
+assert(G.deck.config.card_limits.total_slots == 5)
+assert(#Balalaio.state.deck_bulk_targets == 0)
+assert(G.save_run_calls == saves_before_bulk_remove + 1)
+assert(Balalaio.ui.status == "Removed 2 cards; 1 skipped (1 errors).")
+failed_bulk_remove.remove = original_failed_remove
 
 local game = {}
 Game.update(game, 0.016)
