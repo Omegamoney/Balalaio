@@ -24,6 +24,9 @@ jobs:
       - name: Test Steam installer
         shell: pwsh
         run: ./tests/test-install.ps1
+      - name: Test Windows updater package
+        shell: pwsh
+        run: ./tests/test-updater-package.ps1
       - name: Test APK injection
         shell: pwsh
         run: ./tests/test-build.ps1

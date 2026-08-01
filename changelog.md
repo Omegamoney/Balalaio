@@ -2,6 +2,33 @@
 
 All notable changes to Balalaio are documented here.
 
+## 0.5.0 - 2026-08-01
+
+### Added
+
+- Added an Extras tab for editing Ante, Round, winning Ante, hand size,
+  physical card-selection capacity, independent playable-card and
+  discardable-card limits, shop card slots, base reroll cost, interest amount
+  and cap, and Luck during an active run.
+- Added deck selection mode with individual-card selection plus page-wide,
+  whole-deck, and clear-selection shortcuts.
+- Added a bulk deck editor whose scope can be switched among all cards, the
+  current page, and the current selection.
+- Added direct bulk choices for rank and suit, plus enhancement, edition, and
+  seal effects, so a large deck does not need to be cycled card by card.
+- Added two-step confirmation before removing every card in a bulk target.
+
+### Changed
+
+- Hand-size, play-limit, discard-limit, shop-size, and reroll-cost mutations
+  use the corresponding Balatro or Steamodded update paths when available, so
+  the live UI and derived limits can follow the edited values.
+- Bulk edits snapshot their target scope and ignore cards that are no longer
+  live. Property changes use each card's native setters, while batch removal
+  emits one Steamodded removal context; a completed batch is saved once.
+- Documented the exact versioned Windows updater filename and the explicit APK
+  output path used to prepare matching 0.5.0 release artifacts.
+
 ## 0.4.0 - 2026-07-31
 
 ### Added

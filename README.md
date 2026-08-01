@@ -17,6 +17,9 @@ The primary release now targets **Balatro on Steam for Windows** through
 
 - Change current and maximum hands or discards.
 - Change money, Joker capacity, and consumable capacity.
+- Use the Extras tab to adjust Ante, Round, winning Ante, hand size, physical
+  card-selection capacity, separate playable-card and discardable-card limits,
+  shop card slots, base reroll cost, interest amount and cap, and Luck.
 - Browse and add Jokers through a rarity-filtered, five-card native gallery.
 - Browse owned Jokers as their real in-game cards, including editions and
   stickers; hover or briefly press a card for its live Balatro details popup.
@@ -32,6 +35,10 @@ The primary release now targets **Balatro on Steam for Windows** through
   deck, hand, discard, and play areas.
 - Add exact playing cards by suit, remove cards, and edit rank, suit,
   enhancement, edition, and seal through Balatro's native card APIs.
+- Enter deck selection mode to pick individual cards, the visible page, or the
+  whole deck, then bulk-edit the selected scope.
+- Apply a rank, suit, enhancement, edition, or seal directly to every bulk
+  target, or remove the batch through a separate confirmation step.
 - Hold numeric `-` or `+` controls for a bounded 10-actions-per-second repeat.
 - Drag the compact `BALALAIO` launcher to a convenient screen position.
 - Save mutations through Balatro's normal run-save path.
@@ -200,7 +207,10 @@ Build the self-contained Windows updater archive:
 .\scripts\package-updater.ps1
 ```
 
-The resulting versioned archive is written under `dist\`.
+The resulting versioned archive is written to
+`dist\Balalaio-Windows-Updater-v0.5.0.zip`. Its version is read from
+`Balalaio\Balalaio.json`, so later releases receive the matching filename
+automatically.
 
 The suite checks Lua 5.1 parsing, Steamodded metadata, reload safety, isolated
 native card previews, mocked Joker/consumable/deck mutations, the real Balatro
@@ -220,6 +230,19 @@ By default, the builder reads the compatible, legally obtained APK from
 integrity, or anti-tamper systems. The complete `local-input` directory, APKs,
 signing material, game assets, generated packages, and local extraction
 directories remain excluded from Git.
+
+For versioned 0.5.0 release artifacts, keep the updater's generated name and
+give the APK an explicit output name:
+
+```powershell
+.\scripts\package-updater.ps1
+.\scripts\build.ps1 -OutputApk .\dist\Balalaio-v0.5.0.apk
+```
+
+The combined download archive is
+`dist\Balalaio-v0.5.0-Windows-Android.zip`; it contains those two generated
+files: the Windows updater ZIP and `Balalaio-v0.5.0.apk`. For later releases,
+substitute the current metadata version in the APK and combined-archive names.
 
 ## Project boundaries
 
